@@ -99,8 +99,8 @@
       <label><input type="checkbox" id="turn" checked> Turn wide plates</label>
       <label>Dither
         <select id="dither">
-          <option value="fs" selected>Floyd&ndash;Steinberg</option>
-          <option value="serpentine">Serpentine</option>
+          <option value="serpentine" selected>Serpentine</option>
+          <option value="fs">Floyd&ndash;Steinberg</option>
           <option value="none">Threshold</option>
         </select>
       </label>
@@ -147,12 +147,14 @@
 
       <details>
         <summary>4 &middot; Dithers to one bit</summary>
-        <p>Floyd&ndash;Steinberg by default. <b>Serpentine</b> reverses the
+        <p><b>Serpentine</b> by default. It reverses the
         scan direction on every other row, which cancels the faint diagonal
         worms raster order leaves in flat greys — measured on real pages, tone
-        error unchanged, directional bias down 29&times;. <b>Threshold</b> does
-        no diffusion at all, which is what you want for a page that is really
-        text: a scanned map, a table, a title plate.</p>
+        error unchanged, directional bias down 29&times;.
+        <b>Floyd&ndash;Steinberg</b> is the plain version, and what the desktop
+        app defaults to. <b>Threshold</b> does no diffusion at all, which is
+        what you want for a page that is really text: a scanned map, a table, a
+        title plate.</p>
       </details>
 
       <details>
@@ -164,6 +166,12 @@
         moved across without being unpacked — so the file still opens in any
         other reader exactly as it did before.</p>
         <p>SVG is skipped and says so: the device cannot draw one either.</p>
+        <p>You also get a second file, <code>&lt;book&gt;.cover.tbi</code>. Drop
+        it on the card beside the book, keeping the name, and the shelf uses it
+        instead of decoding a cover on the device — which is both slower and
+        worse, because a streaming decoder with a band of RAM turns a flat grey
+        into a field of worms. It is always Floyd&ndash;Steinberg, whatever you
+        set above: the cover spec names that algorithm outright.</p>
       </details>
 
       <details>
@@ -178,7 +186,7 @@
       </details>
     </div>
 
-    <p class="stamp">Built from Toybox Slicer <code>v1.2.1</code>.</p>
+    <p class="stamp">Built from Toybox Slicer <code>v1.2.2</code>.</p>
 
   </div>
 </main>
@@ -255,7 +263,10 @@ async function go(f) {
     });
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     for (const p of r.problems) say("  " + p, "bad");
-    if (r.cover) say(`  cover (first page, kept whole and untrimmed) — ${r.cover}`);
+    if (r.cover) {
+      say(`  cover (first page, kept whole and untrimmed) — ${r.cover}`);
+      if (r.coverTbi) say(`  cover sidecar prepared, Floyd–Steinberg as the spec asks`);
+    }
     if (r.trimmed || r.turned) {
       const bits = [];
       if (r.trimmed) bits.push(`trimmed a border off ${r.trimmed}`);
@@ -266,18 +277,33 @@ async function go(f) {
     say(`prepared ${r.prepared} of ${r.total} picture(s) in ${secs}s${tail}`,
         r.failed ? "bad" : "good");
 
+    const stem = f.name.replace(/\.epub$/i, "");
     const a = document.createElement("a");
     a.className = "actbtn";
     a.href = URL.createObjectURL(r.blob);
-    a.download = f.name.replace(/\.epub$/i, "") + ".epub";
+    a.download = stem + ".epub";
     a.textContent = "Save the book";
     done.appendChild(a);
-    const note = document.createElement("p");
-    note.className = "sub";
-    note.style.marginTop = "10px";
-    note.style.fontSize = "15px";
-    note.textContent = "Copy it to the card's books folder, the same as any other EPUB.";
-    done.appendChild(note);
+
+    let note = "Copy it to the card's books folder, the same as any other EPUB.";
+    if (r.coverTbi) {
+      const c = document.createElement("a");
+      c.className = "actbtn secondary";
+      c.style.marginLeft = "10px";
+      c.href = URL.createObjectURL(new Blob([r.coverTbi],
+                                            { type: "application/octet-stream" }));
+      c.download = stem + ".cover.tbi";
+      c.textContent = "Save the cover";
+      done.appendChild(c);
+      note = "Copy both to the card's books folder, side by side. The cover file "
+           + "has to keep the book's name — the device finds it by that.";
+    }
+    const p = document.createElement("p");
+    p.className = "sub";
+    p.style.marginTop = "10px";
+    p.style.fontSize = "15px";
+    p.textContent = note;
+    done.appendChild(p);
     done.style.display = "block";
   } catch (e) {
     say("failed: " + (e && e.message || e), "bad");

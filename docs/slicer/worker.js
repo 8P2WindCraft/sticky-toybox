@@ -23,11 +23,26 @@ async function decode(bytes, type) {
 }
 
 self.onmessage = async (ev) => {
-  const { id, bytes, type, opts } = ev.data;
+  const { id, bytes, type, opts, alsoFS } = ev.data;
   try {
     const { rgba, w, h } = await decode(bytes, type);
     const { tbi, trimmed, turned } = prepareArt(rgba, w, h, opts);
-    self.postMessage({ id, ok: true, tbi, w, h, trimmed, turned }, [tbi.buffer]);
+
+    // THE SIDECAR IS NOT "PAGE ONE AGAIN". It is cover_block()'s recipe:
+    // fitted whole on white, no trim, NO TURN, Floyd-Steinberg — the .tbk
+    // cover spec names that algorithm, and cover_block() takes no dither
+    // argument and never rotates. Page one turns a wide picture sideways;
+    // a shelf cover must not, or the shelf shows a book lying on its side.
+    //
+    // Only when page one happened to use exactly those settings are the two
+    // the same bytes, and then the second render is skipped.
+    let extra = null;
+    if (alsoFS && (opts.dither !== "fs" || turned)) {
+      extra = prepareArt(rgba, w, h,
+                         { ...opts, trim: false, turn: false, dither: "fs" }).tbi;
+    }
+    const move = extra ? [tbi.buffer, extra.buffer] : [tbi.buffer];
+    self.postMessage({ id, ok: true, tbi, fsTbi: extra, w, h, trimmed, turned }, move);
   } catch (e) {
     self.postMessage({ id, ok: false, error: String(e && e.message || e) });
   }
