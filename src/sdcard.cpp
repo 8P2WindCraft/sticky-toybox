@@ -1320,8 +1320,24 @@ Report probe() {
   // faster; the shared traces are what they are, and a first answer of "yes"
   // at a conservative clock is worth more than a maybe at 40.
   if (!SD.begin(PIN_SD_CS, SPI, 10000000)) {
-    r.failedAt = "mount";
-    return r;
+    // Same recovery the claim path earned: a real power-off with CS parked
+    // LOW (so nothing back-feeds the card), then one retry at a gentler
+    // clock. And if that also fails, leave the card OFF rather than half-lit
+    // -- the old path returned with the volts still up and CS driven high.
+    SD.end();
+    digitalWrite(PIN_SD_CS, LOW);
+    digitalWrite(PIN_SD_PWR, LOW);
+    delay(250);
+    digitalWrite(PIN_SD_CS, HIGH);
+    digitalWrite(PIN_SD_PWR, HIGH);
+    delay(50);
+    if (!SD.begin(PIN_SD_CS, SPI, 4000000)) {
+      SD.end();
+      digitalWrite(PIN_SD_CS, LOW);
+      digitalWrite(PIN_SD_PWR, LOW);
+      r.failedAt = "mount";
+      return r;
+    }
   }
   r.mounted = true;
   r.sizeMb = SD.cardSize() / (1024ULL * 1024ULL);
@@ -1367,9 +1383,10 @@ Report probe() {
   }
 
   SD.end();
-  digitalWrite(PIN_SD_CS, HIGH);
-  // Powered back down until the next probe. An unpowered card cannot lean on
-  // the shared bus, and it costs nothing while nothing is reading.
+  // Powered back down until the next probe, with CS parked LOW: an unpowered
+  // card cannot lean on the shared bus, and a LOW select is the one level
+  // that cannot back-feed it while the volts are off.
+  digitalWrite(PIN_SD_CS, LOW);
   digitalWrite(PIN_SD_PWR, LOW);
 
   // ...and now the question that matters. If the card has left the panel
@@ -1394,12 +1411,28 @@ bool busClaim() {
   pinMode(PIN_SD_PWR, OUTPUT);
   digitalWrite(PIN_SD_PWR, HIGH);
   delay(50);
-  return SD.begin(PIN_SD_CS, SPI, 10000000);
+  if (SD.begin(PIN_SD_CS, SPI, 10000000)) return true;
+
+  // Some cards never truly powered down last time (see busRelease) and answer
+  // nothing from their half-reset state. Give them the power-off they were
+  // owed -- CS parked LOW so nothing back-feeds them -- and one more chance,
+  // at a gentler clock for the ones that are marginal on the shared traces.
+  SD.end();
+  digitalWrite(PIN_SD_CS, LOW);
+  digitalWrite(PIN_SD_PWR, LOW);
+  delay(250);
+  digitalWrite(PIN_SD_CS, HIGH);
+  digitalWrite(PIN_SD_PWR, HIGH);
+  delay(50);
+  return SD.begin(PIN_SD_CS, SPI, 4000000);
 }
 
 void busRelease() {
   SD.end();
-  digitalWrite(PIN_SD_CS, HIGH);
+  // CS parks LOW while the card is unpowered. Driven HIGH it feeds the dead
+  // card through its protection diodes, the card never resets, and the next
+  // claim finds it wedged until a real power cycle -- issue #1.
+  digitalWrite(PIN_SD_CS, LOW);
   digitalWrite(PIN_SD_PWR, LOW);
   // The controller's RAM is not trusted after the bus has been shared, so the
   // caller's next refresh must be a full one.
