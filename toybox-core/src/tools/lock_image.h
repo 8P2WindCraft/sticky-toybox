@@ -84,6 +84,44 @@ inline constexpr uint32_t BITS = (uint32_t)W * H / 4;  // 96,000
 inline constexpr uint32_t HEADER = 8;                  // magic, u16 w, u16 h
 inline constexpr uint32_t FILE_SIZE = HEADER + BITS;
 inline bool have(const char* path) { return tfs::size(path) == FILE_SIZE; }
+
+// The grey picture laid OVER what is already on the panel, rather than painted
+// to the glass in its own right. Four levels come down to one bit here, and
+// the rule is a threshold rather than a dither: this goes over a page already
+// knocked back to a checkerboard, and a dithered grey interleaved with that
+// reads as noise rather than as a picture. So the two darker levels are ink
+// and the two lighter ones are nothing, which is what makes a mostly-white
+// picture a frame around the page instead of a sheet over it.
+inline bool drawOver(ToolsCanvas& c, const char* path) {
+  size_t len = 0;
+  char* buf = tfs::readAlloc(path, len);
+  if (!buf) return false;
+  if (len != FILE_SIZE) {
+    free(buf);
+    return false;
+  }
+  const uint8_t* b = (const uint8_t*)buf;
+  const uint32_t magic = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) |
+                         ((uint32_t)b[3] << 24);
+  const int w = b[4] | (b[5] << 8), h = b[6] | (b[7] << 8);
+  if (magic != MAGIC || w != W || h != H) {
+    free(buf);
+    return false;
+  }
+  const uint8_t* bits = b + HEADER;
+  const int stride = W / 4;
+  for (int y = 0; y < H; y++) {
+    const uint8_t* row = bits + (size_t)y * stride;
+    for (int xb = 0; xb < stride; xb++) {
+      const uint8_t v = row[xb];
+      if (v == 0xFF) continue;  // four white pixels, which is most of most pictures
+      for (int k = 0; k < 4; k++)
+        if ((uint8_t)((v >> ((3 - k) * 2)) & 3) <= 1) c.fillRect(xb * 4 + k, y, 1, 1, true);
+    }
+  }
+  free(buf);
+  return true;
+}
 }  // namespace tbg2
 
 namespace lockimg {
@@ -101,6 +139,13 @@ inline void remove() {
   tfs::remove(G2_PATH);
 }
 inline bool draw(ToolsCanvas& c) { return tbimg::draw(c, PATH); }
+// The same picture, whichever of the two files it is in, laid over what is
+// already on the panel. `have()` answers for both, so anything that asks
+// "is a picture stored?" and then draws has to be able to draw both -- the
+// lock screen's PAGE said yes to the first question and drew nothing.
+inline bool drawOver(ToolsCanvas& c) {
+  return tbimg::draw(c, PATH) || tbg2::drawOver(c, G2_PATH);
+}
 }  // namespace lockimg
 
 namespace wallimg {

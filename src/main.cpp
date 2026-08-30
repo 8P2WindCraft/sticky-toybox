@@ -233,8 +233,8 @@ void powerOff(bool lowBattery = false) {
     // a lock screen rather than as something spilled on the page. Then the
     // picture, whose white is already transparent -- tbimg::draw skips runs of
     // white -- so it lays over the page instead of replacing it.
-    epd.dimHalf();
-    tbimg::draw(c, lockimg::PATH);
+    epd.dim(4);
+    lockimg::drawOver(c);
   } else {
     epd.clear();
     // A pinned note goes down at its resting angle whatever the device was

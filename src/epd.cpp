@@ -242,13 +242,19 @@ void Epd::setRamAreaFull() {
 
 void Epd::clear(bool white) { memset(_fb, white ? 0xFF : 0x00, EPD_BUF_SIZE); }
 
-// A 1x1 checkerboard, ORed in: a set bit is white, so this turns every other
-// pixel to paper and leaves the ones between as they were. Done on the panel's
-// own buffer rather than through the canvas, because it is the panel's whole
-// surface and the rotation makes no difference to a checkerboard.
-void Epd::dimHalf() {
+void Epd::dim(uint8_t keepOneIn) {
+  // A set bit is white, so this turns pixels to paper and leaves the ones
+  // between as they were. Half keeps a checkerboard; a quarter keeps one pixel
+  // in four, which is what a picture has to be laid over -- black ink on a
+  // half-tone field is black on mid grey, and a line drawing disappears into
+  // it. On the page it reads as a ghost of what you were reading, which is
+  // what a lock screen wants anyway.
   for (int y = 0; y < PANEL_H; y++) {
-    const uint8_t mask = (y & 1) ? 0x55 : 0xAA;
+    uint8_t mask;
+    if (keepOneIn >= 4)
+      mask = (y & 1) ? 0xFF : 0x55;  // ink only at even x on even rows
+    else
+      mask = (y & 1) ? 0x55 : 0xAA;
     uint8_t* row = &_fb[(uint32_t)y * EPD_WB];
     for (int x = 0; x < EPD_WB; x++) row[x] |= mask;
   }

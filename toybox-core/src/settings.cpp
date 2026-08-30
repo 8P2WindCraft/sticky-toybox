@@ -1036,8 +1036,14 @@ void SettingsScreen::renderLock(ToolsHost& host, ToolsCanvas& c) {
   {
     const TRect r = lockRect(LR_PICTURE);
     c.text(r.x + 4, r.y + 8, "The picture", TS_MED, true);
-    c.text(r.x + 4, r.y + 36, lockimg::have() ? "one is stored" : "none chosen yet", TS_SMALL,
-           true);
+    // Which of the two files it is, because they are not interchangeable: a
+    // grey picture gets the panel's four-level repaint on its own, and a
+    // black-and-white one is the only kind that can be laid OVER something.
+    // "one is stored" was true of both and told nobody which they had.
+    const char* kind = !lockimg::have()      ? "none chosen yet"
+                       : lockimg::haveG2()   ? "one is stored, in grey"
+                                             : "one is stored, black and white";
+    c.text(r.x + 4, r.y + 36, kind, TS_SMALL, true);
     const TRect sr = sendRect();
     c.button(sr.x, sr.y, sr.w, sr.h, lockimg::have() ? "REPLACE" : "FROM CARD", false, TS_MED);
     if (lockimg::have()) {
