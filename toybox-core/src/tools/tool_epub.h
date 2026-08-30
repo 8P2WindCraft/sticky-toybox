@@ -112,6 +112,11 @@ class EpubTool : public ToolApp {
  public:
   const char* title() const override { return "EPUB"; }
   int fontSlot() const override { return ToolsHost::FONT_READER; }
+  // A book open at a page, with nothing over it. Not the shelf, not the
+  // options panel, not the middle of picking a phrase to keep.
+  bool showingOwnPage() const override {
+    return _open && _screen == Screen::Page && _menu == rmenu::Page::None && !_picking;
+  }
 
   ~EpubTool() override {
     if (_open && _host) closeBook(false);

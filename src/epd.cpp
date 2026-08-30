@@ -242,6 +242,18 @@ void Epd::setRamAreaFull() {
 
 void Epd::clear(bool white) { memset(_fb, white ? 0xFF : 0x00, EPD_BUF_SIZE); }
 
+// A 1x1 checkerboard, ORed in: a set bit is white, so this turns every other
+// pixel to paper and leaves the ones between as they were. Done on the panel's
+// own buffer rather than through the canvas, because it is the panel's whole
+// surface and the rotation makes no difference to a checkerboard.
+void Epd::dimHalf() {
+  for (int y = 0; y < PANEL_H; y++) {
+    const uint8_t mask = (y & 1) ? 0x55 : 0xAA;
+    uint8_t* row = &_fb[(uint32_t)y * EPD_WB];
+    for (int x = 0; x < EPD_WB; x++) row[x] |= mask;
+  }
+}
+
 // Logical -> panel mapping. Rotating here rather than in the drawing code means
 // every primitive AND every glyph comes out rotated for free: the 8x8 font is
 // blitted pixel by pixel through this function, so its characters turn with

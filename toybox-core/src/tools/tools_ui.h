@@ -801,6 +801,13 @@ class ToolApp {
   // The shell loads it on the way in and drops it on the way out.
   virtual int fontSlot() const { return -1; }
 
+  // True when what is on the panel right now is the owner's own page -- a book
+  // open AT a page, not its shelf, not a menu over it. The lock screen asks
+  // before it decides to keep the panel as it is: "leave the page you were
+  // reading" only means something when there is one, and leaving a shelf or a
+  // half-open options panel on the fridge for eight hours is not the feature.
+  virtual bool showingOwnPage() const { return false; }
+
  protected:
   ToolsHost* _host = nullptr;
   ToolsHost& host() { return *_host; }

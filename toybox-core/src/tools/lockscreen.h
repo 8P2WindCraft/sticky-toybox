@@ -34,15 +34,25 @@ namespace lock {
 // showing one image should show the image its owner is actually in the middle
 // of, and a book cover is the one picture on the device that nobody had to
 // choose.
+//
+// EMPTY_PAGE is the odd one out: it does not draw a lock screen at all, it
+// KEEPS the one already on the panel. E-paper holds its last frame, so a
+// device that fell asleep mid-chapter is already showing the page -- knock it
+// back to a grey texture, lay the lock picture over the top, and the panel
+// wears what you were actually reading. Only from a reader at a page: a shelf
+// or a half-open options panel left on the fridge for eight hours is not the
+// feature, so anywhere else this falls through to the cover.
 enum Empty : uint8_t {
   EMPTY_PICTURE = 1,
   EMPTY_GOODBYE = 2,
   EMPTY_BLANK = 3,
   EMPTY_COVER = 4,
+  EMPTY_PAGE = 5,
 };
 inline constexpr uint8_t EMPTY_FIRST = EMPTY_PICTURE;
-inline constexpr uint8_t EMPTY_LAST = EMPTY_COVER;
-inline constexpr int EMPTY_COUNT = 4;
+inline constexpr uint8_t EMPTY_LAST = EMPTY_PAGE;
+inline constexpr int EMPTY_COUNT = 5;
+
 enum Wake : uint8_t { WAKE_NOTE = 0, WAKE_HUB = 1 };
 
 // Zero is never. Five minutes suits a magnet on a fridge; a device sitting on a
@@ -95,6 +105,16 @@ inline void save(Preferences& p, const Config& c) {
 // The live copy. The settings page writes NVS and updates this in the same
 // breath, so a change takes effect on the next paint rather than the next boot,
 // and nothing has to thread a Preferences reference through the draw calls.
+// Does this power-off keep the panel as it is? Pure, so the harness can ask it
+// without a panel or a power button. Every "no" here is a case where the frame
+// on the glass is not a page: a pinned note owns the panel, a flat battery has
+// to say so, and the picture is portrait so a book being read sideways cannot
+// wear it.
+inline bool keepsPage(const Config& c, bool pinned, bool lowBattery, bool showingPage,
+                      int rotation) {
+  return c.empty == EMPTY_PAGE && showingPage && !pinned && !lowBattery && rotation == 0;
+}
+
 inline Config g_config;
 inline const Config& config() { return g_config; }
 inline void setConfig(const Config& c) { g_config = c; }
