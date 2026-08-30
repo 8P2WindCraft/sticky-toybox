@@ -1333,7 +1333,7 @@ Report probe() {
     delay(50);
     if (!SD.begin(PIN_SD_CS, SPI, 4000000)) {
       SD.end();
-      digitalWrite(PIN_SD_CS, LOW);
+      digitalWrite(PIN_SD_CS, HIGH);
       digitalWrite(PIN_SD_PWR, LOW);
       r.failedAt = "mount";
       return r;
@@ -1383,10 +1383,11 @@ Report probe() {
   }
 
   SD.end();
-  // Powered back down until the next probe, with CS parked LOW: an unpowered
-  // card cannot lean on the shared bus, and a LOW select is the one level
-  // that cannot back-feed it while the volts are off.
-  digitalWrite(PIN_SD_CS, LOW);
+  // Powered back down until the next probe. CS parks HIGH: the panel's own
+  // SPI traffic back-feeds the unpowered card through SCK/MOSI whatever we
+  // do, and a half-alive card that is also SELECTED drives the shared data
+  // line into the panel mid-refresh. Deselected, it at least stays silent.
+  digitalWrite(PIN_SD_CS, HIGH);
   digitalWrite(PIN_SD_PWR, LOW);
 
   // ...and now the question that matters. If the card has left the panel
@@ -1429,10 +1430,11 @@ bool busClaim() {
 
 void busRelease() {
   SD.end();
-  // CS parks LOW while the card is unpowered. Driven HIGH it feeds the dead
-  // card through its protection diodes, the card never resets, and the next
-  // claim finds it wedged until a real power cycle -- issue #1.
-  digitalWrite(PIN_SD_CS, LOW);
+  // CS parks HIGH. The shared SCK/MOSI half-power the card regardless, and a
+  // half-alive SELECTED card talks over the panel (proven on hardware:
+  // "panel stopped answering" + a black screen). The card it leaves wedged
+  // is recovered by the discharge-and-retry in busClaim -- issue #1.
+  digitalWrite(PIN_SD_CS, HIGH);
   digitalWrite(PIN_SD_PWR, LOW);
   // The controller's RAM is not trusted after the bus has been shared, so the
   // caller's next refresh must be a full one.
