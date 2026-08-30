@@ -50,6 +50,7 @@ struct Report {
   int sdFiles = 0;
   uint32_t sdKbPerSec = 0;
   const char* sdFailedAt = "";
+  const char* sdNote = "";
   const char* version = "";
 };
 
@@ -246,6 +247,7 @@ inline void render(ToolsCanvas& c, const Report& r, const Config& cfg, int sel, 
     } else {
       snprintf(buf, sizeof(buf), "%lu MB, %d files, %lu KB/s", (unsigned long)r.sdSizeMb,
                r.sdFiles, (unsigned long)r.sdKbPerSec);
+      if (r.sdNote[0]) c.textCentered(W / 2, 712, r.sdNote, TS_SMALL, true);
       c.textCentered(W / 2, 740, buf, TS_MED, true);
       c.textCentered(W / 2, 770, r.sdPanelOk ? "read ok, panel still answers"
                                              : "PANEL STOPPED ANSWERING",

@@ -20,6 +20,7 @@ struct Report {
   uint32_t readKbPerSec = 0;
   bool panelSurvived = false;  // the panel still answered afterwards
   const char* failedAt = "not tried";
+  const char* note = "";  // how the mount was won, when it was not first-try
 };
 
 // Mounts, measures, reads, and then checks the panel is still there.

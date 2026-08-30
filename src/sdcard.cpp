@@ -14,6 +14,7 @@
 #include "tools/tiny_fs.h"
 
 #ifndef TOYBOX_HOST
+#include <Preferences.h>
 #include <SD.h>
 #include <SPI.h>
 
@@ -1295,6 +1296,85 @@ bool sleepArtGray(uint8_t* gray) {
 
 #else
 
+namespace {
+
+// Which way the load switch on SD_PWR_EN points. On most units HIGH powers
+// the card; at least one production lot ships the gate the other way round,
+// and on those every mount fails with "right pins, right bus, no volts".
+// The answer is learned once, at the first successful inverted mount, and
+// kept in NVS so every later mount is first-try fast.
+bool gSdPwrInv = false;
+bool gSdPwrInvKnown = false;
+
+bool sdPwrInverted() {
+  if (!gSdPwrInvKnown) {
+    Preferences p;
+    p.begin("sdcard", true);
+    gSdPwrInv = p.getBool("pwrinv", false);
+    p.end();
+    gSdPwrInvKnown = true;
+  }
+  return gSdPwrInv;
+}
+
+void sdRememberInverted(bool inv) {
+  if (sdPwrInverted() == inv) return;
+  Preferences p;
+  p.begin("sdcard", false);
+  p.putBool("pwrinv", inv);
+  p.end();
+  gSdPwrInv = inv;
+}
+
+void sdPwr(bool on) {
+  digitalWrite(PIN_SD_PWR, (on != sdPwrInverted()) ? HIGH : LOW);
+}
+
+// The one mount story, three rungs deep. Returns the rung that answered
+// (0 = first try, 1 = after a real discharge, 2 = with the gate driven the
+// other way round) or -1 with the card left unpowered and CS parked HIGH.
+int sdMountLadder() {
+  pinMode(PIN_SD_CS, OUTPUT);
+  digitalWrite(PIN_SD_CS, HIGH);
+  pinMode(PIN_SD_PWR, OUTPUT);
+  sdPwr(true);
+  delay(50);
+  if (SD.begin(PIN_SD_CS, SPI, 10000000)) return 0;
+
+  // Rung 2: the card may still be half-alive from an earlier session and
+  // answering nothing from that state. A true power-off -- CS parked LOW so
+  // nothing back-feeds it, and nothing else touching the bus for the whole
+  // window -- then one retry at a clock the marginal cards can meet.
+  SD.end();
+  digitalWrite(PIN_SD_CS, LOW);
+  sdPwr(false);
+  delay(250);
+  digitalWrite(PIN_SD_CS, HIGH);
+  sdPwr(true);
+  delay(50);
+  if (SD.begin(PIN_SD_CS, SPI, 4000000)) return 1;
+
+  // Rung 3: perhaps the volts were never there at all. Drive the gate the
+  // opposite way and give the card the long settle it deserves if this is
+  // its first power in the whole session. A unit wired the usual way cannot
+  // false-positive here: for it this level really is power off, and an
+  // unpowered card mounts nothing.
+  SD.end();
+  digitalWrite(PIN_SD_PWR, sdPwrInverted() ? HIGH : LOW);
+  delay(250);
+  if (SD.begin(PIN_SD_CS, SPI, 4000000)) {
+    sdRememberInverted(!sdPwrInverted());
+    return 2;
+  }
+
+  SD.end();
+  digitalWrite(PIN_SD_CS, HIGH);
+  sdPwr(false);
+  return -1;
+}
+
+}  // namespace
+
 Report probe() {
   Report r;
 
@@ -1308,37 +1388,16 @@ Report probe() {
   pinMode(PIN_SD_CS, OUTPUT);
   digitalWrite(PIN_SD_CS, HIGH);
 
-  // The card has no power until this line: the slot sits behind a load switch
-  // on SD_PWR_EN, and the first hardware probe failed at "mount" for exactly
-  // that reason -- right pins, right bus, no volts. 50 ms covers the card's
-  // own power-up before it is asked anything.
-  pinMode(PIN_SD_PWR, OUTPUT);
-  digitalWrite(PIN_SD_PWR, HIGH);
-  delay(50);
-
-  // 10 MHz, matching what the panel is driven at. A card will usually go much
-  // faster; the shared traces are what they are, and a first answer of "yes"
-  // at a conservative clock is worth more than a maybe at 40.
-  if (!SD.begin(PIN_SD_CS, SPI, 10000000)) {
-    // Same recovery the claim path earned: a real power-off with CS parked
-    // LOW (so nothing back-feeds the card), then one retry at a gentler
-    // clock. And if that also fails, leave the card OFF rather than half-lit
-    // -- the old path returned with the volts still up and CS driven high.
-    SD.end();
-    digitalWrite(PIN_SD_CS, LOW);
-    digitalWrite(PIN_SD_PWR, LOW);
-    delay(250);
-    digitalWrite(PIN_SD_CS, HIGH);
-    digitalWrite(PIN_SD_PWR, HIGH);
-    delay(50);
-    if (!SD.begin(PIN_SD_CS, SPI, 4000000)) {
-      SD.end();
-      digitalWrite(PIN_SD_CS, HIGH);
-      digitalWrite(PIN_SD_PWR, LOW);
-      r.failedAt = "mount";
-      return r;
-    }
+  // The mount itself, with its recoveries, lives in sdMountLadder(); the
+  // probe's job is to say which rung answered, because that word on the
+  // service screen is how a photo from the field tells us what a unit is.
+  const int rung = sdMountLadder();
+  if (rung < 0) {
+    r.failedAt = "mount";
+    return r;
   }
+  if (rung == 1) r.note = "mounted on the slow retry";
+  if (rung == 2) r.note = "mounted: inverted power gate";
   r.mounted = true;
   r.sizeMb = SD.cardSize() / (1024ULL * 1024ULL);
 
@@ -1388,7 +1447,7 @@ Report probe() {
   // do, and a half-alive card that is also SELECTED drives the shared data
   // line into the panel mid-refresh. Deselected, it at least stays silent.
   digitalWrite(PIN_SD_CS, HIGH);
-  digitalWrite(PIN_SD_PWR, LOW);
+  sdPwr(false);
 
   // ...and now the question that matters. If the card has left the panel
   // wedged, BUSY will not move for a soft reset, which is exactly the check
@@ -1407,25 +1466,7 @@ namespace {
 bool busClaim() {
   pinMode(PIN_EPD_CS, OUTPUT);
   digitalWrite(PIN_EPD_CS, HIGH);
-  pinMode(PIN_SD_CS, OUTPUT);
-  digitalWrite(PIN_SD_CS, HIGH);
-  pinMode(PIN_SD_PWR, OUTPUT);
-  digitalWrite(PIN_SD_PWR, HIGH);
-  delay(50);
-  if (SD.begin(PIN_SD_CS, SPI, 10000000)) return true;
-
-  // Some cards never truly powered down last time (see busRelease) and answer
-  // nothing from their half-reset state. Give them the power-off they were
-  // owed -- CS parked LOW so nothing back-feeds them -- and one more chance,
-  // at a gentler clock for the ones that are marginal on the shared traces.
-  SD.end();
-  digitalWrite(PIN_SD_CS, LOW);
-  digitalWrite(PIN_SD_PWR, LOW);
-  delay(250);
-  digitalWrite(PIN_SD_CS, HIGH);
-  digitalWrite(PIN_SD_PWR, HIGH);
-  delay(50);
-  return SD.begin(PIN_SD_CS, SPI, 4000000);
+  return sdMountLadder() >= 0;
 }
 
 void busRelease() {
@@ -1433,9 +1474,9 @@ void busRelease() {
   // CS parks HIGH. The shared SCK/MOSI half-power the card regardless, and a
   // half-alive SELECTED card talks over the panel (proven on hardware:
   // "panel stopped answering" + a black screen). The card it leaves wedged
-  // is recovered by the discharge-and-retry in busClaim -- issue #1.
+  // is recovered by the discharge-and-retry in the mount ladder -- issue #1.
   digitalWrite(PIN_SD_CS, HIGH);
-  digitalWrite(PIN_SD_PWR, LOW);
+  sdPwr(false);
   // The controller's RAM is not trusted after the bus has been shared, so the
   // caller's next refresh must be a full one.
   epd.reinit();

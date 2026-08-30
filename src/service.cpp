@@ -271,6 +271,7 @@ void run() {
         r.sdKbPerSec = sd.readKbPerSec;
         r.sdPanelOk = sd.panelSurvived;
         r.sdFailedAt = sd.failedAt;
+        r.sdNote = sd.note;
         buzzer::confirm();
         // Full, because the probe resets the controller: its RAM is gone and a
         // differential update would be differencing against nothing.
