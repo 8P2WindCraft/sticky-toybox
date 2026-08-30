@@ -69,10 +69,9 @@ const char* soundLabel(const ToolsHost& host) {
 const char* emptyLabelSmall(uint8_t e) {
   switch (e) {
     case lock::EMPTY_PICTURE: return "picture";
-    case lock::EMPTY_GOODBYE: return "goodbye";
     case lock::EMPTY_COVER: return "cover";
     case lock::EMPTY_PAGE: return "the page";
-    default: return "blank";
+    default: return "goodbye";
   }
 }
 
@@ -976,10 +975,9 @@ namespace {
 const char* emptyLabel(uint8_t e) {
   switch (e) {
     case lock::EMPTY_PICTURE: return "PICTURE";
-    case lock::EMPTY_GOODBYE: return "GOODBYE";
     case lock::EMPTY_COVER: return "COVER";
     case lock::EMPTY_PAGE: return "PAGE";
-    default: return "BLANK";
+    default: return "GOODBYE";
   }
 }
 // The four on/off rows.
@@ -1029,7 +1027,7 @@ void SettingsScreen::renderLock(ToolsHost& host, ToolsCanvas& c) {
   // own row -- its state on the left, its actions on the right.
   lockHead(c, 162, "WHAT IT SHOWS", "with no note pinned");
   for (int k = 0; k < lock::EMPTY_COUNT; k++) {
-    const uint8_t v = (uint8_t)(lock::EMPTY_FIRST + k);
+    const uint8_t v = lock::emptyAt(k);
     const TRect ch = chipRect(k);
     c.button(ch.x, ch.y, ch.w, ch.h, emptyLabel(v), _lock.empty == v, TS_SMALL);
   }
@@ -1107,7 +1105,7 @@ bool SettingsScreen::tapLock(ToolsHost& host, int x, int y) {
   for (int k = 0; k < lock::EMPTY_COUNT; k++) {
     if (!chipRect(k).hit(x, y)) continue;
     const uint8_t was = _lock.empty;
-    _lock.empty = (uint8_t)(lock::EMPTY_FIRST + k);
+    _lock.empty = lock::emptyAt(k);
     lock::save(host.prefs(), _lock);
     lock::setConfig(_lock);
     host.beep(0);

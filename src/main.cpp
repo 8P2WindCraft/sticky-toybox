@@ -263,7 +263,6 @@ void powerOff(bool lowBattery = false) {
   } else if (!drawPinnedFullScreen(c)) {
     // Nothing pinned: whatever the lock screen settings asked for.
     switch (lock::config().empty) {
-      case lock::EMPTY_BLANK: break;  // a device that looks off, because it is
       // Asking for a picture that was never sent falls back to the card rather
       // than to an empty panel that looks like a fault.
       case lock::EMPTY_PICTURE:

@@ -995,7 +995,8 @@ static void checkLockOverPage() {
   // And no other setting keeps the page. This is the one that decides whether
   // the panel is wiped, so a neighbouring enum value getting it wrong would
   // leave somebody's settings screen on the fridge.
-  for (uint8_t e = lock::EMPTY_FIRST; e <= lock::EMPTY_LAST; e++) {
+  for (int i = 0; i < lock::EMPTY_COUNT; i++) {
+    const uint8_t e = lock::emptyAt(i);
     if (e == lock::EMPTY_PAGE) continue;
     lock::Config other;
     other.empty = e;
@@ -1003,6 +1004,12 @@ static void checkLockOverPage() {
       printf("LOCK PAGE FAIL: mode %d kept the page\n", e);
       abort();
     }
+  }
+  // BLANK is retired: a device still set to it comes back as GOODBYE rather
+  // than as a panel showing nothing, which is what a flat battery looks like.
+  if (lock::emptyIndexOf(lock::EMPTY_BLANK) != 1) {
+    printf("LOCK PAGE FAIL: a retired setting did not land on GOODBYE\n");
+    abort();
   }
 
   // The dim. On one bit there is no dimming, only a checkerboard: every other
@@ -1631,14 +1638,14 @@ int main() {
       const uint8_t was = lock::config().empty;
       for (int k = 0; k < lock::EMPTY_COUNT; k++) {
         tapRect(setui::chipRect(k));
-        const uint8_t want = (uint8_t)(lock::EMPTY_FIRST + k);
+        const uint8_t want = lock::emptyAt(k);
         if (lock::config().empty != want) {
           printf("LOCK FAIL: chip %d set the empty screen to %d, wanted %d\n", k,
                  lock::config().empty, want);
           abort();
         }
       }
-      tapRect(setui::chipRect(was - lock::EMPTY_FIRST));
+      tapRect(setui::chipRect(lock::emptyIndexOf(was)));
     }
 
     // The picture row is the one that goes somewhere: to the card's list of
@@ -6795,7 +6802,7 @@ int main() {
       abort();
     }
     g_dumpEnabled = false;
-    tapRect(setui::chipRect(lock::EMPTY_COVER - lock::EMPTY_FIRST));
+    tapRect(setui::chipRect(lock::emptyIndexOf(lock::EMPTY_COVER)));
     if (lock::config().empty != lock::EMPTY_COVER) {
       printf("COVER LOCK FAIL: the chip did not select the cover\n");
       abort();
@@ -6844,7 +6851,7 @@ int main() {
       abort();
     }
     // Put the setting back so the screens below are the ordinary ones.
-    tapRect(setui::chipRect(lock::EMPTY_GOODBYE - lock::EMPTY_FIRST));
+    tapRect(setui::chipRect(lock::emptyIndexOf(lock::EMPTY_GOODBYE)));
     g_dumpEnabled = true;
     printf("cover lock screen ok (opt-in, copied on choosing, survives a bad book)\n");
 
