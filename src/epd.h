@@ -40,12 +40,11 @@ class Epd {
   // Drawing state
   uint8_t* fb() { return _fb; }
   void clear(bool white = true);
-  // Knocks whatever is on the panel back to a grey texture, in place: every
-  // other pixel goes white, in a checkerboard, so black becomes half-tone and
-  // paper stays paper. The lock screen uses it to keep the page you were
-  // reading while making a picture laid over it legible -- on one bit, this is
-  // the only "dim" there is.
-  void dimHalf();
+  // Knocks whatever is on the panel back, in place: pixels go white in a
+  // regular pattern, so black becomes a texture and paper stays paper. `level`
+  // is how far -- 0 leaves it alone, then a quarter of the ink goes, then a
+  // half, then three quarters. On one bit this is the only "dim" there is.
+  void dim(uint8_t level);
 
   // Runtime rotation of the logical coordinate space, for the pinned note
   // following the accelerometer. 0 = portrait (the default every app assumes),

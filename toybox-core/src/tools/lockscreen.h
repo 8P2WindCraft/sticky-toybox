@@ -45,15 +45,42 @@ namespace lock {
 enum Empty : uint8_t {
   EMPTY_PICTURE = 1,
   EMPTY_GOODBYE = 2,
-  EMPTY_BLANK = 3,
+  EMPTY_BLANK = 3,  // retired -- see kEmptyOffered
   EMPTY_COVER = 4,
   EMPTY_PAGE = 5,
 };
+// What is actually offered, in the order the chips sit in. BLANK is gone
+// (owner's call): a panel showing nothing is what a flat battery looks like,
+// and GOODBYE already says "this device is off" without the ambiguity. The
+// VALUE stays where it is rather than the four being renumbered -- a stored
+// setting is a number in NVS, and shifting them would silently move somebody
+// from COVER to PAGE. A device still set to it is moved to GOODBYE on load.
+inline constexpr uint8_t kEmptyOffered[] = {EMPTY_PICTURE, EMPTY_GOODBYE, EMPTY_COVER, EMPTY_PAGE};
+inline constexpr int EMPTY_COUNT = (int)(sizeof(kEmptyOffered) / sizeof(kEmptyOffered[0]));
 inline constexpr uint8_t EMPTY_FIRST = EMPTY_PICTURE;
 inline constexpr uint8_t EMPTY_LAST = EMPTY_PAGE;
-inline constexpr int EMPTY_COUNT = 5;
+inline uint8_t emptyAt(int i) { return kEmptyOffered[i < 0 ? 0 : (i >= EMPTY_COUNT ? 0 : i)]; }
+inline int emptyIndexOf(uint8_t v) {
+  for (int i = 0; i < EMPTY_COUNT; i++)
+    if (kEmptyOffered[i] == v) return i;
+  return 1;  // GOODBYE's place
+}
 
 enum Wake : uint8_t { WAKE_NOTE = 0, WAKE_HUB = 1 };
+
+// How far the page behind the lock picture is knocked back. On one bit there
+// is no dimming, only how much of the ink is left standing, so these are the
+// four steps worth having between "as you left it" and "barely there".
+enum PageDim : uint8_t { PAGE_AS_IS = 0, PAGE_SOFT = 1, PAGE_HALF = 2, PAGE_GHOST = 3 };
+inline constexpr int PAGE_DIM_COUNT = 4;
+inline const char* pageDimName(uint8_t d) {
+  switch (d) {
+    case PAGE_AS_IS: return "as you left it";
+    case PAGE_HALF: return "at half";
+    case PAGE_GHOST: return "a ghost";
+    default: return "softened";
+  }
+}
 
 // Zero is never. Five minutes suits a magnet on a fridge; a device sitting on a
 // desk between turns of a game wants longer, which is the whole reason this is
@@ -73,6 +100,12 @@ struct Config {
   // will be rather than guessing from a settings row.
   uint8_t pinRotation = 0;
   uint8_t wake = WAKE_NOTE;
+  // How far back the page is knocked before the lock picture goes over it
+  // (EMPTY_PAGE only). Taste, not correctness: a picture wants the page faint
+  // behind it and a reader wants to still see what they were reading, and
+  // there is no answer that suits both. Softened by default -- half was the
+  // first guess and the owner found it too pale.
+  uint8_t pageDim = PAGE_SOFT;
 };
 
 inline Config load(Preferences& p) {
@@ -80,7 +113,9 @@ inline Config load(Preferences& p) {
   c.sleepIdx = (uint8_t)p.getInt("ls_sleep", 2);
   if (c.sleepIdx >= SLEEP_COUNT) c.sleepIdx = 2;
   c.empty = (uint8_t)p.getInt("ls_empty", EMPTY_GOODBYE);
-  if (c.empty < EMPTY_FIRST || c.empty > EMPTY_LAST) c.empty = EMPTY_GOODBYE;
+  // Anything not on offer -- a value from a future build, or BLANK from a
+  // device set before it was retired -- comes back as GOODBYE.
+  if (emptyIndexOf(c.empty) == 1) c.empty = EMPTY_GOODBYE;
   c.pinRotation = (uint8_t)(p.getInt("ls_pinrot", 0) & 3);
   c.showTime = p.getBool("ls_time", true);
   c.showTemp = p.getBool("ls_temp", true);
@@ -88,6 +123,8 @@ inline Config load(Preferences& p) {
   c.autoRotate = p.getBool("ls_rot", true);
   c.wake = (uint8_t)p.getInt("ls_wake", WAKE_NOTE);
   if (c.wake > WAKE_HUB) c.wake = WAKE_NOTE;
+  c.pageDim = (uint8_t)p.getInt("ls_pdim", PAGE_SOFT);
+  if (c.pageDim > PAGE_GHOST) c.pageDim = PAGE_SOFT;
   return c;
 }
 
@@ -100,6 +137,7 @@ inline void save(Preferences& p, const Config& c) {
   p.putBool("ls_rot", c.autoRotate);
   p.putInt("ls_pinrot", c.pinRotation);
   p.putInt("ls_wake", c.wake);
+  p.putInt("ls_pdim", c.pageDim);
 }
 
 // The live copy. The settings page writes NVS and updates this in the same

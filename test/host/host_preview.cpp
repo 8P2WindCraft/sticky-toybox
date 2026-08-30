@@ -103,11 +103,20 @@ bool Epd::begin() {
   return true;
 }
 void Epd::clear(bool white) { memset(_fb, white ? 0xFF : 0x00, EPD_BUF_SIZE); }
-// The same checkerboard the panel does: a set bit is white, so this turns
-// every other pixel to paper and leaves the ones between as they were.
-void Epd::dimHalf() {
+void Epd::dim(uint8_t level) {
+  // A set bit is white, so this takes ink away and leaves the rest as it was.
+  // The steps are how much survives: everything, three quarters, a half, a
+  // quarter. Which one suits is taste -- a picture wants the page faint behind
+  // it, a reader wants to still see what they were reading -- so the lock
+  // screen makes it a setting rather than a decision taken here.
+  if (!level) return;
   for (int y = 0; y < PANEL_H; y++) {
-    const uint8_t mask = (y & 1) ? 0x55 : 0xAA;
+    uint8_t mask;
+    switch (level) {
+      case 1: mask = (y & 1) ? 0x22 : 0x88; break;   // a quarter of the ink goes
+      case 2: mask = (y & 1) ? 0x55 : 0xAA; break;   // half of it
+      default: mask = (y & 1) ? 0xFF : 0x55; break;  // three quarters
+    }
     uint8_t* row = &_fb[(uint32_t)y * EPD_WB];
     for (int x = 0; x < EPD_WB; x++) row[x] |= mask;
   }
@@ -986,7 +995,8 @@ static void checkLockOverPage() {
   // And no other setting keeps the page. This is the one that decides whether
   // the panel is wiped, so a neighbouring enum value getting it wrong would
   // leave somebody's settings screen on the fridge.
-  for (uint8_t e = lock::EMPTY_FIRST; e <= lock::EMPTY_LAST; e++) {
+  for (int i = 0; i < lock::EMPTY_COUNT; i++) {
+    const uint8_t e = lock::emptyAt(i);
     if (e == lock::EMPTY_PAGE) continue;
     lock::Config other;
     other.empty = e;
@@ -994,6 +1004,12 @@ static void checkLockOverPage() {
       printf("LOCK PAGE FAIL: mode %d kept the page\n", e);
       abort();
     }
+  }
+  // BLANK is retired: a device still set to it comes back as GOODBYE rather
+  // than as a panel showing nothing, which is what a flat battery looks like.
+  if (lock::emptyIndexOf(lock::EMPTY_BLANK) != 1) {
+    printf("LOCK PAGE FAIL: a retired setting did not land on GOODBYE\n");
+    abort();
   }
 
   // The dim. On one bit there is no dimming, only a checkerboard: every other
@@ -1003,16 +1019,28 @@ static void checkLockOverPage() {
     for (uint32_t i = 0; i < EPD_BUF_SIZE; i++) n += __builtin_popcount((uint8_t)~epd.fb()[i]);
     return n;
   };
+  // Four steps, and each one has to leave exactly what it says: everything,
+  // three quarters, a half, a quarter. How faint the page should be is taste,
+  // so the owner sets it -- but the steps themselves are arithmetic.
   epd.clear(false);  // a panel of solid ink
   const int allInk = panelInkNow();
-  epd.dimHalf();
-  const int halved = panelInkNow();
-  if (allInk != (int)EPD_BUF_SIZE * 8 || halved * 2 != allInk) {
-    printf("LOCK PAGE FAIL: dimming %d px left %d, wanted half\n", allInk, halved);
+  if (allInk != (int)EPD_BUF_SIZE * 8) {
+    printf("LOCK PAGE FAIL: a black panel is %d px\n", allInk);
     abort();
   }
-  epd.clear(true);  // ...and paper stays paper
-  epd.dimHalf();
+  static const int kLeft[lock::PAGE_DIM_COUNT] = {4, 3, 2, 1};  // quarters left standing
+  for (int d = 0; d < lock::PAGE_DIM_COUNT; d++) {
+    epd.clear(false);
+    epd.dim((uint8_t)d);
+    const int left = panelInkNow();
+    if (left * 4 != allInk * kLeft[d]) {
+      printf("LOCK PAGE FAIL: dim %d left %d px, wanted %d quarters of %d\n", d, left, kLeft[d],
+             allInk);
+      abort();
+    }
+  }
+  epd.clear(true);  // ...and paper stays paper, at every step
+  for (int d = 0; d < lock::PAGE_DIM_COUNT; d++) epd.dim((uint8_t)d);
   if (panelInkNow() != 0) {
     printf("LOCK PAGE FAIL: dimming an empty panel put %d px on it\n", panelInkNow());
     abort();
@@ -1030,9 +1058,9 @@ static void checkLockOverPage() {
     epd.setRotation(0);
     for (int y = 40; y < 700; y += 30) c.fillRect(24, y, 432, 18, true);
     const int pageInk = panelInkNow();
-    epd.dimHalf();
+    epd.dim(lock::PAGE_GHOST);
     const int dimmed = panelInkNow();
-    if (dimmed * 2 != pageInk) {
+    if (dimmed * 4 != pageInk) {
       printf("LOCK PAGE FAIL: the page dimmed from %d to %d\n", pageInk, dimmed);
       abort();
     }
@@ -1082,14 +1110,83 @@ static void checkLockOverPage() {
         epdMapPixel(epd.rotation(), epd.panelFlipX(), epd.panelFlipY(), x, y, pxx, pyy);
         if ((epd.fb()[(uint32_t)pyy * EPD_WB + (pxx >> 3)] & (0x80 >> (pxx & 7))) == 0) inside++;
       }
-    if (inside < 2000) {
+    if (inside < 1000) {
       printf("LOCK PAGE FAIL: only %d px of the page survived under the picture\n", inside);
       abort();
     }
     tfs::remove(lockimg::PATH);
+
+    // ...and again with the picture in the OTHER file. A picture taken from a
+    // card .bmp is stored as the grey /lockimg.g2, not the 1-bit .tbi, and
+    // lockimg::have() answers yes for either -- so the settings page said "one
+    // is stored" while the lock screen drew nothing at all. Reported from
+    // hardware as "it just dim page".
     epd.clear(true);
-    printf("lock over page ok (page %d px, dimmed %d, picture over it %d, %d still showing)\n",
-           pageInk, dimmed, both, inside);
+    for (int y = 40; y < 700; y += 30) c.fillRect(24, y, 432, 18, true);
+    epd.dim(lock::PAGE_GHOST);
+    const int dimmedAgain = panelInkNow();
+    {
+      static std::vector<uint8_t> grey(tbg2::FILE_SIZE, 0xFF);  // 3 is white
+      grey[0] = 'T';
+      grey[1] = 'B';
+      grey[2] = 'G';
+      grey[3] = '1';
+      grey[4] = (uint8_t)(tbg2::W & 255);
+      grey[5] = (uint8_t)(tbg2::W >> 8);
+      grey[6] = (uint8_t)(tbg2::H & 255);
+      grey[7] = (uint8_t)(tbg2::H >> 8);
+      uint8_t* g2 = grey.data() + tbg2::HEADER;
+      auto lvl = [&](int x, int y, uint8_t v) {
+        uint8_t& by = g2[(size_t)y * (tbg2::W / 4) + (x >> 2)];
+        const int sh = (3 - (x & 3)) * 2;
+        by = (uint8_t)((by & ~(3 << sh)) | ((v & 3) << sh));
+      };
+      for (int x = 8; x < tbg2::W - 8; x++)
+        for (int t = 0; t < 4; t++) {
+          lvl(x, 8 + t, 0);
+          lvl(x, tbg2::H - 12 + t, 0);
+        }
+      for (int y = 8; y < tbg2::H - 8; y++)
+        for (int t = 0; t < 4; t++) {
+          lvl(8 + t, y, 0);
+          lvl(tbg2::W - 12 + t, y, 0);
+        }
+      // A band of the lighter grey, which must NOT ink: over a page already
+      // knocked back to a checkerboard, a mid grey laid on top is noise.
+      for (int y = 300; y < 340; y++)
+        for (int x = 40; x < 440; x++) lvl(x, y, 2);
+      tfs::write(lockimg::G2_PATH, (const char*)grey.data(), grey.size());
+    }
+    if (!lockimg::have()) {
+      printf("LOCK PAGE FAIL: a grey picture did not count as a picture\n");
+      abort();
+    }
+    if (!lockimg::drawOver(c)) {
+      printf("LOCK PAGE FAIL: the grey picture would not draw over the page\n");
+      abort();
+    }
+    const int greyBoth = panelInkNow();
+    if (greyBoth <= dimmedAgain) {
+      printf("LOCK PAGE FAIL: the grey picture added %d px\n", greyBoth - dimmedAgain);
+      abort();
+    }
+    // The light band left the page as it was, rather than flooding it.
+    int band = 0;
+    for (int y = 300; y < 340; y++)
+      for (int x = 40; x < 440; x++) {
+        int pxx, pyy;
+        epdMapPixel(epd.rotation(), epd.panelFlipX(), epd.panelFlipY(), x, y, pxx, pyy);
+        if ((epd.fb()[(uint32_t)pyy * EPD_WB + (pxx >> 3)] & (0x80 >> (pxx & 7))) == 0) band++;
+      }
+    if (band > 40 * 400 / 3) {
+      printf("LOCK PAGE FAIL: the light grey inked %d px of the page\n", band);
+      abort();
+    }
+    tfs::remove(lockimg::G2_PATH);
+    epd.clear(true);
+    printf("lock over page ok (page %d px, dimmed %d, picture over it %d, %d still showing; "
+           "grey picture %d)\n",
+           pageInk, dimmed, both, inside, greyBoth);
   }
 }
 
@@ -1541,14 +1638,14 @@ int main() {
       const uint8_t was = lock::config().empty;
       for (int k = 0; k < lock::EMPTY_COUNT; k++) {
         tapRect(setui::chipRect(k));
-        const uint8_t want = (uint8_t)(lock::EMPTY_FIRST + k);
+        const uint8_t want = lock::emptyAt(k);
         if (lock::config().empty != want) {
           printf("LOCK FAIL: chip %d set the empty screen to %d, wanted %d\n", k,
                  lock::config().empty, want);
           abort();
         }
       }
-      tapRect(setui::chipRect(was - lock::EMPTY_FIRST));
+      tapRect(setui::chipRect(lock::emptyIndexOf(was)));
     }
 
     // The picture row is the one that goes somewhere: to the card's list of
@@ -6705,7 +6802,7 @@ int main() {
       abort();
     }
     g_dumpEnabled = false;
-    tapRect(setui::chipRect(lock::EMPTY_COVER - lock::EMPTY_FIRST));
+    tapRect(setui::chipRect(lock::emptyIndexOf(lock::EMPTY_COVER)));
     if (lock::config().empty != lock::EMPTY_COVER) {
       printf("COVER LOCK FAIL: the chip did not select the cover\n");
       abort();
@@ -6754,7 +6851,7 @@ int main() {
       abort();
     }
     // Put the setting back so the screens below are the ordinary ones.
-    tapRect(setui::chipRect(lock::EMPTY_GOODBYE - lock::EMPTY_FIRST));
+    tapRect(setui::chipRect(lock::emptyIndexOf(lock::EMPTY_GOODBYE)));
     g_dumpEnabled = true;
     printf("cover lock screen ok (opt-in, copied on choosing, survives a bad book)\n");
 

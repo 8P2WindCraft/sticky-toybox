@@ -242,13 +242,20 @@ void Epd::setRamAreaFull() {
 
 void Epd::clear(bool white) { memset(_fb, white ? 0xFF : 0x00, EPD_BUF_SIZE); }
 
-// A 1x1 checkerboard, ORed in: a set bit is white, so this turns every other
-// pixel to paper and leaves the ones between as they were. Done on the panel's
-// own buffer rather than through the canvas, because it is the panel's whole
-// surface and the rotation makes no difference to a checkerboard.
-void Epd::dimHalf() {
+void Epd::dim(uint8_t level) {
+  // A set bit is white, so this takes ink away and leaves the rest as it was.
+  // The steps are how much survives: everything, three quarters, a half, a
+  // quarter. Which one suits is taste -- a picture wants the page faint behind
+  // it, a reader wants to still see what they were reading -- so the lock
+  // screen makes it a setting rather than a decision taken here.
+  if (!level) return;
   for (int y = 0; y < PANEL_H; y++) {
-    const uint8_t mask = (y & 1) ? 0x55 : 0xAA;
+    uint8_t mask;
+    switch (level) {
+      case 1: mask = (y & 1) ? 0x22 : 0x88; break;   // a quarter of the ink goes
+      case 2: mask = (y & 1) ? 0x55 : 0xAA; break;   // half of it
+      default: mask = (y & 1) ? 0xFF : 0x55; break;  // three quarters
+    }
     uint8_t* row = &_fb[(uint32_t)y * EPD_WB];
     for (int x = 0; x < EPD_WB; x++) row[x] |= mask;
   }
