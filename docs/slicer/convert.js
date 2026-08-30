@@ -107,6 +107,7 @@ export async function convertEpub(bytes, opts = {}, onProgress = () => {}) {
   const nCores = opts.workers || Math.max(1, Math.min(16, (navigator.hardwareConcurrency || 4) - 1));
   const pool = new Pool(Math.min(nCores, Math.max(1, wanted.length)));
   const art = new Map();
+  let cover = null;
   let done = 0, failed = 0, trimmed = 0, turned = 0;
   const problems = [];
   for (const n of svg) problems.push(`${n} — skipped, the device cannot draw an SVG`);
@@ -115,11 +116,20 @@ export async function convertEpub(bytes, opts = {}, onProgress = () => {}) {
     await Promise.all(wanted.map(async (entry) => {
       const raw = await readEntry(byName.get(entry));
       const copy = new Uint8Array(raw);      // detachable: the pool transfers it
-      const entryOpts = entry === coverEntry ? { ...opts, trim: false } : opts;
+      const isCover = entry === coverEntry;
+      const entryOpts = isCover ? { ...opts, trim: false } : opts;
       const res = await pool.run(
-        { id: entry, bytes: copy, type: mimeFor(entry), opts: entryOpts },
+        { id: entry, bytes: copy, type: mimeFor(entry), opts: entryOpts, alsoFS: isCover },
         [copy.buffer]
       );
+      if (isCover && res.ok) {
+        // The `<stem>.cover.tbi` sidecar: the same 48,008 bytes, saved beside
+        // the book so the device does not have to decode a cover itself. The
+        // firmware is blunt about why that matters — a streaming decoder and a
+        // band of RAM turn a flat grey into a field of worms — and a book with
+        // a sidecar also opens faster, because nothing has to be decoded.
+        cover = { entry, bytes: res.fsTbi || res.tbi };
+      }
       done++;
       if (res.ok && res.tbi && res.tbi.length === TBI_FILE_SIZE) {
         art.set(artEntryName(entry), res.tbi);
@@ -164,7 +174,8 @@ export async function convertEpub(bytes, opts = {}, onProgress = () => {}) {
 
   return {
     blob: writeZip(records),
-    prepared: art.size, failed, skipped: svg.length, cover: coverEntry,
+    prepared: art.size, failed, skipped: svg.length,
+    cover: coverEntry, coverTbi: cover && cover.bytes,
     total: wanted.length, trimmed, turned, problems,
   };
 }
