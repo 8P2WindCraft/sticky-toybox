@@ -103,19 +103,20 @@ bool Epd::begin() {
   return true;
 }
 void Epd::clear(bool white) { memset(_fb, white ? 0xFF : 0x00, EPD_BUF_SIZE); }
-void Epd::dim(uint8_t keepOneIn) {
-  // A set bit is white, so this turns pixels to paper and leaves the ones
-  // between as they were. Half keeps a checkerboard; a quarter keeps one pixel
-  // in four, which is what a picture has to be laid over -- black ink on a
-  // half-tone field is black on mid grey, and a line drawing disappears into
-  // it. On the page it reads as a ghost of what you were reading, which is
-  // what a lock screen wants anyway.
+void Epd::dim(uint8_t level) {
+  // A set bit is white, so this takes ink away and leaves the rest as it was.
+  // The steps are how much survives: everything, three quarters, a half, a
+  // quarter. Which one suits is taste -- a picture wants the page faint behind
+  // it, a reader wants to still see what they were reading -- so the lock
+  // screen makes it a setting rather than a decision taken here.
+  if (!level) return;
   for (int y = 0; y < PANEL_H; y++) {
     uint8_t mask;
-    if (keepOneIn >= 4)
-      mask = (y & 1) ? 0xFF : 0x55;  // ink only at even x on even rows
-    else
-      mask = (y & 1) ? 0x55 : 0xAA;
+    switch (level) {
+      case 1: mask = (y & 1) ? 0x22 : 0x88; break;   // a quarter of the ink goes
+      case 2: mask = (y & 1) ? 0x55 : 0xAA; break;   // half of it
+      default: mask = (y & 1) ? 0xFF : 0x55; break;  // three quarters
+    }
     uint8_t* row = &_fb[(uint32_t)y * EPD_WB];
     for (int x = 0; x < EPD_WB; x++) row[x] |= mask;
   }
@@ -1011,20 +1012,28 @@ static void checkLockOverPage() {
     for (uint32_t i = 0; i < EPD_BUF_SIZE; i++) n += __builtin_popcount((uint8_t)~epd.fb()[i]);
     return n;
   };
+  // Four steps, and each one has to leave exactly what it says: everything,
+  // three quarters, a half, a quarter. How faint the page should be is taste,
+  // so the owner sets it -- but the steps themselves are arithmetic.
   epd.clear(false);  // a panel of solid ink
   const int allInk = panelInkNow();
-  epd.dim(2);
-  const int halved = panelInkNow();
-  epd.clear(false);
-  epd.dim(4);
-  const int quartered = panelInkNow();
-  if (allInk != (int)EPD_BUF_SIZE * 8 || halved * 2 != allInk || quartered * 4 != allInk) {
-    printf("LOCK PAGE FAIL: dimming %d px left %d at a half and %d at a quarter\n", allInk,
-           halved, quartered);
+  if (allInk != (int)EPD_BUF_SIZE * 8) {
+    printf("LOCK PAGE FAIL: a black panel is %d px\n", allInk);
     abort();
   }
-  epd.clear(true);  // ...and paper stays paper
-  epd.dim(4);
+  static const int kLeft[lock::PAGE_DIM_COUNT] = {4, 3, 2, 1};  // quarters left standing
+  for (int d = 0; d < lock::PAGE_DIM_COUNT; d++) {
+    epd.clear(false);
+    epd.dim((uint8_t)d);
+    const int left = panelInkNow();
+    if (left * 4 != allInk * kLeft[d]) {
+      printf("LOCK PAGE FAIL: dim %d left %d px, wanted %d quarters of %d\n", d, left, kLeft[d],
+             allInk);
+      abort();
+    }
+  }
+  epd.clear(true);  // ...and paper stays paper, at every step
+  for (int d = 0; d < lock::PAGE_DIM_COUNT; d++) epd.dim((uint8_t)d);
   if (panelInkNow() != 0) {
     printf("LOCK PAGE FAIL: dimming an empty panel put %d px on it\n", panelInkNow());
     abort();
@@ -1042,7 +1051,7 @@ static void checkLockOverPage() {
     epd.setRotation(0);
     for (int y = 40; y < 700; y += 30) c.fillRect(24, y, 432, 18, true);
     const int pageInk = panelInkNow();
-    epd.dim(4);
+    epd.dim(lock::PAGE_GHOST);
     const int dimmed = panelInkNow();
     if (dimmed * 4 != pageInk) {
       printf("LOCK PAGE FAIL: the page dimmed from %d to %d\n", pageInk, dimmed);
@@ -1107,7 +1116,7 @@ static void checkLockOverPage() {
     // hardware as "it just dim page".
     epd.clear(true);
     for (int y = 40; y < 700; y += 30) c.fillRect(24, y, 432, 18, true);
-    epd.dim(4);
+    epd.dim(lock::PAGE_GHOST);
     const int dimmedAgain = panelInkNow();
     {
       static std::vector<uint8_t> grey(tbg2::FILE_SIZE, 0xFF);  // 3 is white

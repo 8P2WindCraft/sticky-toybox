@@ -234,6 +234,9 @@ class SettingsScreen {
   // screen: the button asks, and any other tap takes the question away.
   bool _armed = false;
   const char* _note = nullptr;
+  // The PAGE chip's note is composed rather than picked from a table: it
+  // states how far back the page goes, which the chip itself cannot say.
+  char _pageNote[96] = {};
   char _coverNote[96] = {};
   // 0 = settings, 1 = lock, 2 = wallpaper, 3 = apps, 4 = files,
   // 5 = the lock screen's picture, off the card, 6 = the clock,

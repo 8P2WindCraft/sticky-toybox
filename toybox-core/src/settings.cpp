@@ -1106,16 +1106,26 @@ bool SettingsScreen::tapLock(ToolsHost& host, int x, int y) {
   }
   for (int k = 0; k < lock::EMPTY_COUNT; k++) {
     if (!chipRect(k).hit(x, y)) continue;
+    const uint8_t was = _lock.empty;
     _lock.empty = (uint8_t)(lock::EMPTY_FIRST + k);
     lock::save(host.prefs(), _lock);
     lock::setConfig(_lock);
     host.beep(0);
     if (_lock.empty == lock::EMPTY_PAGE) {
-      // Worth saying, because this one keeps something rather than drawing
-      // something -- and because it does the right thing with no picture at
-      // all, which nobody would guess from a chip that says PAGE.
-      _note = lockimg::have() ? "the page you were reading, dimmed, under your picture"
-                              : "the page you were reading, dimmed - add a picture to dress it";
+      // Tapping PAGE again steps how far back the page goes. How faint it
+      // should be is taste rather than correctness -- a picture wants the page
+      // barely there, a reader wants to still see what they were reading --
+      // and putting it behind a second tap on the chip that already says PAGE
+      // costs no room on a page that has none, the way the reader's own page
+      // turns are cycled by tapping their row.
+      if (was == lock::EMPTY_PAGE)
+        _lock.pageDim = (uint8_t)((_lock.pageDim + 1) % lock::PAGE_DIM_COUNT);
+      lock::save(host.prefs(), _lock);
+      lock::setConfig(_lock);
+      snprintf(_pageNote, sizeof(_pageNote), "the page %s  -  %s",
+               lock::pageDimName(_lock.pageDim),
+               lockimg::have() ? "tap PAGE to change" : "no picture stored yet");
+      _note = _pageNote;
       return true;
     }
     if (_lock.empty != lock::EMPTY_COVER) {
