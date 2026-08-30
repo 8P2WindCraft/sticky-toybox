@@ -71,6 +71,7 @@ const char* emptyLabelSmall(uint8_t e) {
     case lock::EMPTY_PICTURE: return "picture";
     case lock::EMPTY_GOODBYE: return "goodbye";
     case lock::EMPTY_COVER: return "cover";
+    case lock::EMPTY_PAGE: return "the page";
     default: return "blank";
   }
 }
@@ -977,6 +978,7 @@ const char* emptyLabel(uint8_t e) {
     case lock::EMPTY_PICTURE: return "PICTURE";
     case lock::EMPTY_GOODBYE: return "GOODBYE";
     case lock::EMPTY_COVER: return "COVER";
+    case lock::EMPTY_PAGE: return "PAGE";
     default: return "BLANK";
   }
 }
@@ -1102,6 +1104,14 @@ bool SettingsScreen::tapLock(ToolsHost& host, int x, int y) {
     lock::save(host.prefs(), _lock);
     lock::setConfig(_lock);
     host.beep(0);
+    if (_lock.empty == lock::EMPTY_PAGE) {
+      // Worth saying, because this one keeps something rather than drawing
+      // something -- and because it does the right thing with no picture at
+      // all, which nobody would guess from a chip that says PAGE.
+      _note = lockimg::have() ? "the page you were reading, dimmed, under your picture"
+                              : "the page you were reading, dimmed - add a picture to dress it";
+      return true;
+    }
     if (_lock.empty != lock::EMPTY_COVER) {
       _note = nullptr;
       return true;

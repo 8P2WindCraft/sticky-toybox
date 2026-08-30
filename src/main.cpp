@@ -214,18 +214,33 @@ bool paintGreySleep() {
 }
 
 void powerOff(bool lowBattery = false) {
-  epd.clear();
   // E-paper keeps its last image with no power. If a note is pinned, leave that
   // on the panel instead of a goodbye card — that is the whole point of a note
   // you stick on the fridge.
   ToolsCanvas& c = stickyHost.sharedCanvas();
-  // A pinned note goes down at its resting angle whatever the device was doing
-  // a moment ago -- powering off from the middle of a game must not leave the
-  // note sideways for the next eight hours. Everything else is portrait.
+  // Nothing is cleared until it is known whether the frame already on the
+  // panel is the one to keep. The framebuffer still holds the last screen
+  // drawn, so "keep the page you were reading" costs a checkerboard and a
+  // picture rather than a redraw -- but only if the clear does not happen
+  // first, which is why this is asked before anything is wiped.
   bool pinned = false;
-  {
-    char pin[note::NAME_LEN + 1];
-    pinned = !lowBattery && note::getPinned(pin);
+  char pin[note::NAME_LEN + 1];
+  pinned = !lowBattery && note::getPinned(pin);
+  const bool keepPage = lock::keepsPage(lock::config(), pinned, lowBattery,
+                                        toybox.showingOwnPage(), epd.rotation());
+  if (keepPage) {
+    // The page, knocked back to a grey texture so the picture over it reads as
+    // a lock screen rather than as something spilled on the page. Then the
+    // picture, whose white is already transparent -- tbimg::draw skips runs of
+    // white -- so it lays over the page instead of replacing it.
+    epd.dimHalf();
+    tbimg::draw(c, lockimg::PATH);
+  } else {
+    epd.clear();
+    // A pinned note goes down at its resting angle whatever the device was
+    // doing a moment ago -- powering off from the middle of a game must not
+    // leave the note sideways for the next eight hours. Everything else is
+    // portrait.
     const int rot = pinned ? restRotation() : 0;
     epd.setRotation(rot);
     touch.setRotation(rot);
@@ -234,9 +249,11 @@ void powerOff(bool lowBattery = false) {
   // The one screen that gets the panel's real greys: an unpinned power-off
   // set to show a picture. paintGreySleep paints the panel itself, so the
   // whole canvas path -- footer included -- is skipped.
-  const bool paintedGrey = !lowBattery && !pinned &&
+  const bool paintedGrey = !keepPage && !lowBattery && !pinned &&
                            lock::config().empty == lock::EMPTY_PICTURE && paintGreySleep();
-  if (paintedGrey) {
+  if (keepPage) {
+    // Already done above: the page is on the panel with the picture over it.
+  } else if (paintedGrey) {
     // fall through to deepSleep below; the panel already holds the picture
   } else if (lowBattery) {
     // The one case that overrides everything else: if the panel just says
@@ -254,6 +271,9 @@ void powerOff(bool lowBattery = false) {
         // fall through
       // The book you are in the middle of. Copied into flash when the book was
       // opened, so this costs no card and no bus claim on the way to sleep.
+      // Asked to keep the page by somebody who was not reading one. The book
+      // they were last in is the honest next best thing.
+      case lock::EMPTY_PAGE:
       case lock::EMPTY_COVER:
         if (tbimg::draw(c, bthumb::LOCK_PATH)) break;
         // fall through

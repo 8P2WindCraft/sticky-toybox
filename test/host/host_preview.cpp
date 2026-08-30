@@ -103,6 +103,15 @@ bool Epd::begin() {
   return true;
 }
 void Epd::clear(bool white) { memset(_fb, white ? 0xFF : 0x00, EPD_BUF_SIZE); }
+// The same checkerboard the panel does: a set bit is white, so this turns
+// every other pixel to paper and leaves the ones between as they were.
+void Epd::dimHalf() {
+  for (int y = 0; y < PANEL_H; y++) {
+    const uint8_t mask = (y & 1) ? 0x55 : 0xAA;
+    uint8_t* row = &_fb[(uint32_t)y * EPD_WB];
+    for (int x = 0; x < EPD_WB; x++) row[x] |= mask;
+  }
+}
 // No grey waveform on a PC: the reader falls back to its 1-bit dither, which
 // is also the only rendering a .pgm can hold.
 bool Epd::displayGrey2bpp(const uint8_t*) { return false; }
@@ -942,6 +951,148 @@ static void checkCardBaseline() {
          mid, inkT - top, inkB - top);
 }
 
+// --- the lock screen that keeps the page you were reading --------------------
+// E-paper holds its last frame with no power, so the page is already on the
+// glass when the device goes to sleep. EMPTY_PAGE keeps it: nothing is
+// cleared, the page is knocked back to a grey texture, and the lock picture
+// is laid over the top -- its white is transparent already, because tbimg
+// skips runs of white.
+//
+// The rule is a pure function so it can be asked here without a panel or a
+// power button, and every refusal in it is a case where the frame on the glass
+// is not a page worth keeping.
+static void checkLockOverPage() {
+  lock::Config page;
+  page.empty = lock::EMPTY_PAGE;
+  struct Case {
+    bool pinned, low, showing;
+    int rot;
+    bool want;
+    const char* what;
+  };
+  static const Case kCases[] = {
+      {false, false, true, 0, true, "reading a page"},
+      {true, false, true, 0, false, "a note is pinned -- the note owns the panel"},
+      {false, true, true, 0, false, "the battery is flat and has to say so"},
+      {false, false, false, 0, false, "not on a page -- a shelf or a menu"},
+      {false, false, true, 1, false, "reading sideways -- the picture is portrait"},
+  };
+  for (const Case& k : kCases) {
+    if (lock::keepsPage(page, k.pinned, k.low, k.showing, k.rot) != k.want) {
+      printf("LOCK PAGE FAIL: %s came out %d\n", k.what, !k.want);
+      abort();
+    }
+  }
+  // And no other setting keeps the page. This is the one that decides whether
+  // the panel is wiped, so a neighbouring enum value getting it wrong would
+  // leave somebody's settings screen on the fridge.
+  for (uint8_t e = lock::EMPTY_FIRST; e <= lock::EMPTY_LAST; e++) {
+    if (e == lock::EMPTY_PAGE) continue;
+    lock::Config other;
+    other.empty = e;
+    if (lock::keepsPage(other, false, false, true, 0)) {
+      printf("LOCK PAGE FAIL: mode %d kept the page\n", e);
+      abort();
+    }
+  }
+
+  // The dim. On one bit there is no dimming, only a checkerboard: every other
+  // pixel to paper, so ink becomes half-tone and paper stays paper.
+  auto panelInkNow = [] {
+    int n = 0;
+    for (uint32_t i = 0; i < EPD_BUF_SIZE; i++) n += __builtin_popcount((uint8_t)~epd.fb()[i]);
+    return n;
+  };
+  epd.clear(false);  // a panel of solid ink
+  const int allInk = panelInkNow();
+  epd.dimHalf();
+  const int halved = panelInkNow();
+  if (allInk != (int)EPD_BUF_SIZE * 8 || halved * 2 != allInk) {
+    printf("LOCK PAGE FAIL: dimming %d px left %d, wanted half\n", allInk, halved);
+    abort();
+  }
+  epd.clear(true);  // ...and paper stays paper
+  epd.dimHalf();
+  if (panelInkNow() != 0) {
+    printf("LOCK PAGE FAIL: dimming an empty panel put %d px on it\n", panelInkNow());
+    abort();
+  }
+
+  // The whole composite, on a stand-in page: ink where a page has ink, dimmed,
+  // with the picture over it. Three things have to be true at once, and each
+  // one alone can be had by accident -- a cleared panel would pass "the
+  // picture is there", and a panel nobody dimmed would pass "the page is
+  // there".
+  {
+    // A page: horizontal bars where the lines of text would be.
+    epd.clear(true);
+    ToolsCanvas& c = stickyHost.sharedCanvas();
+    epd.setRotation(0);
+    for (int y = 40; y < 700; y += 30) c.fillRect(24, y, 432, 18, true);
+    const int pageInk = panelInkNow();
+    epd.dimHalf();
+    const int dimmed = panelInkNow();
+    if (dimmed * 2 != pageInk) {
+      printf("LOCK PAGE FAIL: the page dimmed from %d to %d\n", pageInk, dimmed);
+      abort();
+    }
+    // A picture with a frame in it, planted the way one arrives.
+    {
+      static std::vector<uint8_t> pic(tbimg::FILE_SIZE, 0xFF);
+      pic[0] = 'T';
+      pic[1] = 'B';
+      pic[2] = 'I';
+      pic[3] = '1';
+      pic[4] = (uint8_t)(tbimg::W & 255);
+      pic[5] = (uint8_t)(tbimg::W >> 8);
+      pic[6] = (uint8_t)(tbimg::H & 255);
+      pic[7] = (uint8_t)(tbimg::H >> 8);
+      uint8_t* bits = pic.data() + tbimg::HEADER;
+      auto ink = [&](int x, int y) {
+        bits[(size_t)y * tbimg::STRIDE + (x >> 3)] &= (uint8_t)~(0x80 >> (x & 7));
+      };
+      for (int x = 8; x < tbimg::W - 8; x++)
+        for (int t = 0; t < 4; t++) {
+          ink(x, 8 + t);
+          ink(x, tbimg::H - 12 + t);
+        }
+      for (int y = 8; y < tbimg::H - 8; y++)
+        for (int t = 0; t < 4; t++) {
+          ink(8 + t, y);
+          ink(tbimg::W - 12 + t, y);
+        }
+      tfs::write(lockimg::PATH, (const char*)pic.data(), pic.size());
+    }
+    if (!tbimg::draw(c, lockimg::PATH)) {
+      printf("LOCK PAGE FAIL: the picture would not draw\n");
+      abort();
+    }
+    const int both = panelInkNow();
+    if (both <= dimmed) {
+      printf("LOCK PAGE FAIL: the picture added %d px over the page\n", both - dimmed);
+      abort();
+    }
+    // The page is still under it. Measured where the picture is NOT -- inside
+    // the frame, away from it -- so a panel the picture had cleared would read
+    // as blank here however much ink its own frame carries.
+    int inside = 0;
+    for (int y = 200; y < 400; y++)
+      for (int x = 100; x < 380; x++) {
+        int pxx, pyy;
+        epdMapPixel(epd.rotation(), epd.panelFlipX(), epd.panelFlipY(), x, y, pxx, pyy);
+        if ((epd.fb()[(uint32_t)pyy * EPD_WB + (pxx >> 3)] & (0x80 >> (pxx & 7))) == 0) inside++;
+      }
+    if (inside < 2000) {
+      printf("LOCK PAGE FAIL: only %d px of the page survived under the picture\n", inside);
+      abort();
+    }
+    tfs::remove(lockimg::PATH);
+    epd.clear(true);
+    printf("lock over page ok (page %d px, dimmed %d, picture over it %d, %d still showing)\n",
+           pageInk, dimmed, both, inside);
+  }
+}
+
 static void checkCardFamily() {
   static const char* kSizes[3] = {"DejaVuSerif_8.cpfont", "DejaVuSerif_12.cpfont",
                                   "DejaVuSerif_18.cpfont"};
@@ -1192,6 +1343,7 @@ int main() {
   checkCardFamily();
   checkPreparedFonts();
   checkCardBaseline();
+  checkLockOverPage();
   checkHubRouting("all shown");
 
   // The three folder pages, drawn as a finger would reach them.
@@ -3379,7 +3531,18 @@ int main() {
       // would set the chapter name in 44 px inside a 56 px band and run it off
       // the bottom of the panel.
       toybox.onButton(SideBtn::Ok);  // back to the panel root
+      // What the lock screen asks before it decides to keep the panel as it
+      // is. A panel over the page does not count -- leaving a half-open
+      // options panel on the fridge for eight hours is not the feature.
+      if (toybox.showingOwnPage()) {
+        printf("READER SIZE FAIL: the options panel counted as a page\n");
+        abort();
+      }
       toybox.onButton(SideBtn::Ok);  // panel down, onto the page
+      if (!toybox.showingOwnPage()) {
+        printf("READER SIZE FAIL: a book open at a page did not count as one\n");
+        abort();
+      }
       toybox.onTap(240, 400);        // the middle: the footer comes up
       stickyHost.refresh(true);
       int first = -1, last = -1;

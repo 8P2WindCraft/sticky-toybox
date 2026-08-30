@@ -41,6 +41,12 @@ inline uint8_t g_greyBand[GREY_BAND_ROWS * GREY_ROW_BYTES];
 
 class BookTool : public ToolApp {
  public:
+  // A .tbk open at a page, with no options panel over it. Same question the
+  // EPUB reader answers, for the same lock screen.
+  bool showingOwnPage() const override {
+    return _open && _screen == Screen::Page && _menu == rmenu::Page::None;
+  }
+
   const char* title() const override { return "BOOKS"; }
 
   ~BookTool() override {

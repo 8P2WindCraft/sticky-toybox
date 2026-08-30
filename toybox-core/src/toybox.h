@@ -69,6 +69,10 @@ class Toybox {
   // standalone firmware, which has nowhere to leave to, ignores it.
   bool atHub() const { return _where == Where::Hub; }
 
+  // Whether the panel is showing a reader's own page (see ToolApp). The lock
+  // screen asks on the way to sleep, before anything is cleared.
+  bool showingOwnPage() const { return _active && _active->showingOwnPage(); }
+
 #ifdef TOYBOX_HOST
   // What the preview harness needs to assert on: which app is up, and whether
   // the settings screen is showing.
