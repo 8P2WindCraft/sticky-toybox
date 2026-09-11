@@ -23,7 +23,7 @@ Run it after tools/make_image.sh:
     python3 tools/make_registry.py [--preview path/to/photo.jpg]
 
 It writes dist/registry/toybox/, which is copied into a clone of the registry
-as integrations/toybox/ and validated there with `npm run validate`.
+as firmwares/toybox/ and validated there with `npm run validate`.
 """
 import argparse
 import hashlib
@@ -134,6 +134,11 @@ def main():
         'name': 'Toybox',
         'group': 'community',
         'catalogSection': 'community',
+        # Drives the Community Firmwares filter on Seeed's catalogue. Added to
+        # the schema after the entry was first merged, and added to the live
+        # entry by hand -- so a generator that did not emit it would quietly
+        # take Toybox out of the ereader filter on the next update PR.
+        'category': 'productivity',
         'mode': 'flash',
         'status': 'beta',
         'summary': 'An EPUB reader, notes you pin to the e-paper, six games and everyday tools.',
@@ -142,10 +147,11 @@ def main():
             'reader that keeps your place on the card, notes you write from your phone and '
             'pin to the screen so they survive the power going off, six games chosen '
             'because they suit a display that redraws in a fifth of a second, and the '
-            'everyday tools -- coin, dice, timer, picker, flashcards, recipes. Reading '
-            'positions are stored in CrossPoint’s own format, so a card can move '
-            'between the two firmwares. English, Thai, Chinese, Japanese, Korean and '
-            'Vietnamese.'
+            'everyday tools -- coin, dice, timer, picker, flashcards, recipes. It reads '
+            'fonts and reading positions in CrossInk and CrossPoint’s own formats, so a '
+            'card carries its books, its places and its typefaces between firmwares, and '
+            'illustrations draw straight out of an optimised EPUB. '
+            'English, Thai, Chinese, Japanese, Korean and Vietnamese.'
         ),
         'author': {'name': 'z4b333', 'url': 'https://github.com/z4b333'},
         'origin': {'name': 'sticky-toybox', 'url': SOURCE_URL},
@@ -190,7 +196,10 @@ def main():
             ],
         },
     }
-    json.dump(integration, open(os.path.join(OUT, 'integration.json'), 'w'), indent=2)
+    # firmware.json, not integration.json: the registry was reorganised in
+    # September 2026 -- integrations/ split into firmwares/, examples/ and
+    # printables/, and the entry file was renamed with it.
+    json.dump(integration, open(os.path.join(OUT, 'firmware.json'), 'w'), indent=2)
 
     preview = os.path.join(OUT, 'assets', 'preview' + ext)
     if args.preview:
@@ -223,15 +232,23 @@ from your phone and pin to the screen, six games, and the everyday tools.
 ## What it does
 
 - **Reader.** EPUBs off the card, with the book's own contents list, adjustable
-  type, three line spacings and three screen rotations. Reading positions are
-  written in CrossPoint's format as well as its own, so a card carries its
-  places between the two firmwares.
+  type, three line spacings and three screen rotations. Illustrations draw
+  straight out of a book that has been through CrossInk's optimizer, with no
+  conversion step. Reading positions are written in CrossPoint's format as well
+  as its own, so a card carries its places between the two firmwares.
+- **Fonts.** Typefaces are read from the card in CrossInk's `.cpfont` format --
+  the device's own text and one face each for books, notes, flashcards and
+  recipes, so a novel can be set in a serif without the menus following it. A
+  book set in a card family is sized in that family's own cuts. Anything a font
+  does not carry falls back to the built-in face, so choosing one can never
+  empty a language.
 - **Comics.** A `.tbk` page format prepared on a PC by
   [Toybox Slicer](https://github.com/z4b333/Toybox-slicer), which re-cuts a
   webtoon strip at blank gutters so a page never breaks through a face.
 - **Notes.** The device serves a small editor to a phone over its own access
   point, or reads a Markdown file off the card. A pinned note stays on the panel
-  with the power off.
+  with the power off -- as can a picture, a book's cover, or the page you were
+  reading with a picture laid over it.
 - **Games.** Wordle, Sudoku, Nonogram, 2048, Ships and XO. Boards and streaks
   are saved as you play.
 - **Tools.** Coin, dice, timer and stopwatch, random number, card draw, a picker
