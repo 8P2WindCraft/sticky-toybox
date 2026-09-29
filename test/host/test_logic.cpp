@@ -391,18 +391,18 @@ static void testPickerList() {
     assert(strcmp(items[MAX_ITEMS - 1], one) == 0);
   }
 
-  {  // accented Latin folds to its base letter instead of drawing as noise
+  {  // UTF-8 passes through whole (picker_list.h)
     const int n = fromText("Jos\xc3\xa9\nZo\xc3\xab\n\xc3\x87""etin\n", items);
     assert(n == 3);
-    assert(strcmp(items[0], "Jose") == 0);
-    assert(strcmp(items[1], "Zoe") == 0);
-    assert(strcmp(items[2], "Cetin") == 0);
+    assert(strcmp(items[0], "Jos\xc3\xa9") == 0);
+    assert(strcmp(items[1], "Zo\xc3\xab") == 0);
+    assert(strcmp(items[2], "\xc3\x87""etin") == 0);
   }
 
-  {  // other multi-byte scripts collapse to one marker per character, not per byte
+  {  // other scripts pass through too
     const int n = fromText("\xe0\xb8\x81\xe0\xb8\x82\n", items);  // two Thai letters
     assert(n == 1);
-    assert(strcmp(items[0], "??") == 0);
+    assert(strcmp(items[0], "\xe0\xb8\x81\xe0\xb8\x82") == 0);
   }
 
   {  // control characters are stripped; tabs become spaces
