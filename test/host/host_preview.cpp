@@ -35,6 +35,7 @@
 #include "tools/reader_menu.h"
 #include "tools/tool_epub.h"
 #include "tools/tool_timetable.h"
+#include "tools/tool_quest.h"
 #include "tools/epub/epubcore.h"
 #include "tools/epub/koreader_sdr.h"
 #include "tools/recents.h"
@@ -301,7 +302,7 @@ static void checkHubRouting(const char* label) {
   struct Want { bool game; int idx; };
   struct Grp { Want items[7]; int n; };
   const Grp ALL[3] = {
-      {{{true, 0}, {true, 1}, {true, 2}, {true, 3}, {false, 7}, {false, 8}}, 6},
+      {{{true, 0}, {true, 1}, {true, 2}, {true, 3}, {false, 7}, {false, 8}, {false, 13}}, 7},
       {{{false, 0}, {false, 1}, {false, 3}, {false, 4}, {false, 2}, {false, 11}, {false, 9}}, 7},
       {{{false, 12}, {false, 5}, {false, 6}, {false, 10}}, 4},
   };
@@ -6263,6 +6264,33 @@ int main() {
     TimetableTool* tt = static_cast<TimetableTool*>(toybox.hostActive());
     if (strcmp(tt->hostPlan().cell[1][2], "\xc3\x9c" "a") != 0)
       printf("TIMETABLE FAIL: typed subject did not land in Tuesday lesson 3\n");
+  }
+  // Abenteuer: a fresh game on the meadow, the forest with its slimes, the
+  // castle's locked door, and the end screen.
+  stickyHost.prefs().remove("qs_state");
+  setScreen("tool_quest_meadow");
+  toybox.open(false, 13);
+  {
+    QuestTool* q = static_cast<QuestTool*>(toybox.hostActive());
+    quest::State& s = q->hostState();
+    setScreen("tool_quest_forest");
+    s.x = quest::W - 1;
+    s.y = 6;
+    toybox.onTap(EPD_W - 2, qui::MAP_Y + 6 * qui::T + 20);  // east: into the forest
+    if (s.room != 1) printf("QUEST FAIL: tapping east of the hero did not walk him east\n");
+    setScreen("tool_quest_castle");
+    quest::enterRoom(s, 3, 5, 9);
+    s.nEn = 1;
+    s.en[0] = quest::Enemy{2, 2};
+    toybox.onTap(5 * qui::T + 20, qui::MAP_Y + 2 * qui::T);  // up, into the locked door
+    if (s.doorOpen || s.y != 9) printf("QUEST FAIL: the door opened without a key\n");
+    setScreen("tool_quest_won");
+    s.keys = 1;
+    toybox.onTap(5 * qui::T + 20, qui::MAP_Y + 2 * qui::T);  // open it
+    s.nEn = 0;
+    for (int i = 0; i < 3 && !s.won; i++) quietTap(5 * qui::T + 20, qui::MAP_Y + 2 * qui::T);
+    if (!s.won) printf("QUEST FAIL: walking through the open door did not reach the crystal\n");
+    stickyHost.refresh(true);
   }
   g_dumpEnabled = false;
   toybox.open(false, 4);  // back to the picker, where the phone shots continue

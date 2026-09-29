@@ -12,6 +12,7 @@
 #include "tools/tool_flash.h"
 #include "tools/tool_note.h"
 #include "tools/tool_picker.h"
+#include "tools/tool_quest.h"
 #include "tools/tool_random.h"
 #include "tools/tool_recipe.h"
 #include "tools/tool_sea.h"
@@ -50,6 +51,7 @@ bool Toybox::build(bool game, int idx) {
       case 9: _active = new BookTool(); break;
       case 11: _active = new RecipeTool(); break;
       case 12: _active = new TimetableTool(); break;
+      case 13: _active = new QuestTool(); break;
       default: _active = new EpubTool(); break;
     }
   }

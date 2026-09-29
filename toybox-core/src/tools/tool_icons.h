@@ -6,16 +6,16 @@
 
 namespace ticons {
 
-inline constexpr int COUNT = 13;
+inline constexpr int COUNT = 14;
 inline const char* const NAMES[COUNT] = {"COIN",  "DICE",   "TIMER", "RANDOM",
                                          "PICKER", "FLASHCARDS", "NOTES",  "SHIPS",
                                          "SUDOKU", "BOOKS", "EPUB", "RECIPES",
-                                         "STUNDENPLAN"};
+                                         "STUNDENPLAN", "ABENTEUER"};
 // Kept short: a hub tile is 140 px, which is about twelve characters.
 inline const char* const DESCS[COUNT] = {"heads/tails", "D4 - D20",   "countdown", "number/card",
                                          "from a list", "flashcards", "from phone", "battleship",
                                          "9x9 numbers", "from the card", "ebooks", "what to cook",
-                                         "die Schulwoche"};
+                                         "die Schulwoche", "Schatzsuche"};
 
 inline void coin(ToolsCanvas& c, int cx, int cy, int s) {
   c.drawCircle(cx, cy, s / 2, 3, true);
@@ -168,6 +168,15 @@ inline void timetable(ToolsCanvas& c, int cx, int cy, int s) {
   for (int i = 1; i < 4; i++) c.fillRect(x, y + h / 5 + ((h - h / 5) * i) / 4, w, 1, true);
 }
 
+// A sword standing on its point: blade, cross-guard, grip and pommel.
+inline void quest(ToolsCanvas& c, int cx, int cy, int s) {
+  const int top = cy - s / 2, guard = cy + s / 6;
+  c.drawRect(cx - 4, top, 9, guard - top, 2, true);
+  c.fillRect(cx - s / 4, guard, s / 2 + 1, 5, true);
+  c.fillRect(cx - 2, guard + 5, 5, s / 5, true);
+  c.fillCircle(cx, guard + 5 + s / 5 + 3, 5, true);
+}
+
 inline void draw(ToolsCanvas& c, int idx, int cx, int cy, int s) {
   switch (idx) {
     case 0: coin(c, cx, cy, s); break;
@@ -182,6 +191,7 @@ inline void draw(ToolsCanvas& c, int idx, int cx, int cy, int s) {
     case 9: books(c, cx, cy, s); break;
     case 10: epub(c, cx, cy, s); break;
     case 12: timetable(c, cx, cy, s); break;
+    case 13: quest(c, cx, cy, s); break;
     default: recipes(c, cx, cy, s); break;
   }
 }

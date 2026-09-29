@@ -24,7 +24,9 @@ struct Group {
 };
 
 inline constexpr Group GROUPS[] = {
-    {"PLAY", {{true, 0}, {true, 1}, {true, 2}, {true, 3}, {false, 7}, {false, 8}}, 6},
+    // ABENTEUER last, on the drawer's second page, so the first page and the
+    // settings rows keep the order people already know.
+    {"PLAY", {{true, 0}, {true, 1}, {true, 2}, {true, 3}, {false, 7}, {false, 8}, {false, 13}}, 7},
     // The everyday instruments: coin, dice, picker, timer -- things you
     // consult and put down -- and recipes, whose "what should we cook" is
     // answered the same way. (STUDY's drawer is full: a fifth tile there

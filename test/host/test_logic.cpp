@@ -15,6 +15,7 @@
 #include "tools/sudoku_gen.h"
 #include "tools/timetable_data.h"
 #include "tools/keyboard.h"
+#include "tools/quest_rules.h"
 
 static std::mt19937 rng(12345);
 static uint32_t rnd32() { return rng(); }
@@ -997,6 +998,82 @@ static void testKeyboard() {
   printf("keyboard ok\n");
 }
 
+static void testQuest() {
+  using namespace quest;
+  // Every room is W x H, and every edge opening has an opening facing it.
+  for (int r = 0; r < ROOMS; r++)
+    for (int j = 0; j < H; j++) assert((int)strlen(MAPS[r][j]) == W);
+  for (int r = 0; r < ROOMS; r++) {
+    const int rx = r % RW, ry = r / RW;
+    for (int j = 0; j < H; j++) {
+      if (MAPS[r][j][W - 1] == '.') assert(rx + 1 < RW && MAPS[r + 1][j][0] == '.');
+      if (MAPS[r][j][0] == '.') assert(rx > 0 && MAPS[r - 1][j][W - 1] == '.');
+    }
+    for (int i = 0; i < W; i++) {
+      if (MAPS[r][H - 1][i] == '.') assert(ry + 1 < RH && MAPS[r + RW][0][i] == '.');
+      if (MAPS[r][0][i] == '.') assert(ry > 0 && MAPS[r - RW][H - 1][i] == '.');
+    }
+  }
+
+  static State s;
+  newGame(s);
+  assert(valid(s) && s.room == 0 && s.hp == START_HP && s.nEn == 0);
+  assert(MAPS[0][s.y][s.x] == '@');
+
+  // A wall costs no turn.
+  s.x = 1; s.y = 1;
+  const uint16_t steps = s.steps;
+  assert(step(s, -1, 0) == EV_BLOCKED && s.steps == steps);
+
+  // East out of the meadow at row 6 lands on the forest's west edge.
+  s.x = W - 1; s.y = 6;
+  assert(step(s, 1, 0) == EV_ROOM);
+  assert(s.room == 1 && s.x == 0 && s.y == 6 && s.nEn == 3);
+
+  // Bumping a slime kills it; a slime beside you hits back.
+  s.nEn = 1; s.en[0] = Enemy{2, 6}; s.x = 1; s.y = 6;
+  uint16_t ev = step(s, 1, 0);
+  assert((ev & EV_KILLED) && s.nEn == 0 && s.x == 1);
+  s.nEn = 1; s.en[0] = Enemy{1, 5}; s.hp = 2;
+  ev = wait(s);
+  assert((ev & EV_HURT) && s.hp == 1);
+  s.hp = 1;
+  ev = wait(s);
+  assert((ev & EV_DIED) && s.hp == 0);
+  assert(step(s, 1, 0) == EV_NONE);  // no moving while fallen
+  respawn(s);
+  assert(s.room == 0 && s.hp == START_HP);
+
+  // The key, the locked door, the crystal.
+  s.room = 1; s.nEn = 0; s.x = 7; s.y = 2;
+  ev = step(s, 1, 0);
+  assert((ev & EV_KEY) && s.keys == 1 && tileAt(s, 1, 8, 2) == '.');
+  enterRoom(s, 3, 5, 9); s.nEn = 0;
+  assert(step(s, 0, -1) == EV_DOOR && s.keys == 0 && s.doorOpen && s.y == 9);
+  assert(step(s, 0, -1) & EV_MOVED);  // through the doorway
+  s.nEn = 0;
+  step(s, 0, -1);
+  ev = step(s, 0, -1);
+  assert((ev & EV_WON) && s.won);
+  assert(step(s, 0, 1) == EV_NONE);
+
+  // Without a key the door stays shut and no turn passes.
+  newGame(s);
+  enterRoom(s, 3, 5, 9); s.nEn = 0;
+  assert(step(s, 0, -1) == EV_LOCKED && !s.doorOpen);
+
+  // A chasing slime closes in rather than wandering off.
+  newGame(s);
+  s.x = 5; s.y = 5; s.nEn = 1; s.en[0] = Enemy{8, 5};
+  wait(s);
+  assert(s.en[0].x == 7 && s.en[0].y == 5);
+
+  // A corrupt save is refused.
+  s.room = 9;
+  assert(!valid(s));
+  printf("quest ok\n");
+}
+
 int main() {
   testNonogram();
   testWordle();
@@ -1008,6 +1085,7 @@ int main() {
   testSudoku();
   testTimetable();
   testKeyboard();
+  testQuest();
   printf("ALL TESTS PASSED\n");
   return 0;
 }
