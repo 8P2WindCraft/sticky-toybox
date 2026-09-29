@@ -6,14 +6,16 @@
 
 namespace ticons {
 
-inline constexpr int COUNT = 12;
+inline constexpr int COUNT = 13;
 inline const char* const NAMES[COUNT] = {"COIN",  "DICE",   "TIMER", "RANDOM",
                                          "PICKER", "FLASHCARDS", "NOTES",  "SHIPS",
-                                         "SUDOKU", "BOOKS", "EPUB", "RECIPES"};
+                                         "SUDOKU", "BOOKS", "EPUB", "RECIPES",
+                                         "STUNDENPLAN"};
 // Kept short: a hub tile is 140 px, which is about twelve characters.
 inline const char* const DESCS[COUNT] = {"heads/tails", "D4 - D20",   "countdown", "number/card",
                                          "from a list", "flashcards", "from phone", "battleship",
-                                         "9x9 numbers", "from the card", "ebooks", "what to cook"};
+                                         "9x9 numbers", "from the card", "ebooks", "what to cook",
+                                         "die Schulwoche"};
 
 inline void coin(ToolsCanvas& c, int cx, int cy, int s) {
   c.drawCircle(cx, cy, s / 2, 3, true);
@@ -157,6 +159,15 @@ inline void recipes(ToolsCanvas& c, int cx, int cy, int s) {
   }
 }
 
+// A week grid: a solid header band over five columns of lessons.
+inline void timetable(ToolsCanvas& c, int cx, int cy, int s) {
+  const int w = s, h = (s * 5) / 6, x = cx - w / 2, y = cy - h / 2;
+  c.drawRect(x, y, w, h, 3, true);
+  c.fillRect(x, y, w, h / 5, true);
+  for (int i = 1; i < 5; i++) c.fillRect(x + (w * i) / 5, y + h / 5, 1, h - h / 5, true);
+  for (int i = 1; i < 4; i++) c.fillRect(x, y + h / 5 + ((h - h / 5) * i) / 4, w, 1, true);
+}
+
 inline void draw(ToolsCanvas& c, int idx, int cx, int cy, int s) {
   switch (idx) {
     case 0: coin(c, cx, cy, s); break;
@@ -170,6 +181,7 @@ inline void draw(ToolsCanvas& c, int idx, int cx, int cy, int s) {
     case 8: sudoku(c, cx, cy, s); break;
     case 9: books(c, cx, cy, s); break;
     case 10: epub(c, cx, cy, s); break;
+    case 12: timetable(c, cx, cy, s); break;
     default: recipes(c, cx, cy, s); break;
   }
 }

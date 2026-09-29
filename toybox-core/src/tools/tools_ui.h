@@ -334,6 +334,13 @@ class ToolsHost {
     (void)minute;
     return false;
   }
+  // The date as well, for the school apps: which day's lessons to show.
+  virtual bool clockDate(int& year, int& month, int& day) const {
+    (void)year;
+    (void)month;
+    (void)day;
+    return false;
+  }
 
   // Font families on the SD card: CrossInk's .cpfont families, which this
   // firmware reads and draws from. -1 means no card answered, which is a

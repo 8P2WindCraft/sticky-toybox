@@ -13,6 +13,8 @@
 #include "tools/sea_rules.h"
 #include "tools/sea_net.h"
 #include "tools/sudoku_gen.h"
+#include "tools/timetable_data.h"
+#include "tools/keyboard.h"
 
 static std::mt19937 rng(12345);
 static uint32_t rnd32() { return rng(); }
@@ -896,6 +898,105 @@ static void testSudoku() {
   printf("sudoku ok\n");
 }
 
+static void testTimetable() {
+  using namespace ttdata;
+  static Plan p;
+
+  {  // the text form reads back, cells trimmed, gaps kept, times parsed
+    const int days = fromText(
+        "Zeiten: 7:45 8:35 09.40\n"
+        "Mo: Mathe | Deutsch | | Sport\r\n"
+        "di:Englisch|Mathe\n"
+        "Notiz: ignoriert\n",
+        p);
+    assert(days == 2);
+    assert(strcmp(p.cell[0][0], "Mathe") == 0);
+    assert(strcmp(p.cell[0][1], "Deutsch") == 0);
+    assert(p.cell[0][2][0] == 0);
+    assert(strcmp(p.cell[0][3], "Sport") == 0);
+    assert(strcmp(p.cell[1][0], "Englisch") == 0);
+    assert(p.start[0] == 7 * 60 + 45 && p.start[2] == 9 * 60 + 40 && p.start[3] == 0);
+    assert(periodsUsed(p) == 4);
+  }
+
+  {  // round trip: what the device saves is what it loads
+    char text[3000];
+    assert(toText(p, text, sizeof(text)) > 0);
+    static Plan q;
+    assert(fromText(text, q) == DAYS);
+    assert(memcmp(&p, &q, sizeof(p)) == 0);
+    assert(toText(p, text, 10) == 0);  // too small is refused, not truncated
+  }
+
+  {  // names are cut at NAME_CHARS on a codepoint boundary
+    fromText("Mo: \xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c"
+             "\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\xc3\x9c\n", p);  // 18 x Ü
+    assert(uni::count(p.cell[0][0]) == NAME_CHARS);
+    assert(strlen(p.cell[0][0]) == (size_t)NAME_CHARS * 2);
+  }
+
+  // 2026-09-28 is a Monday.
+  assert(weekday(2026, 9, 28) == 0);
+  assert(weekday(2026, 10, 4) == 6);
+  assert(weekday(2024, 2, 29) == 3);
+  assert(weekday(2000, 1, 1) == 5);
+
+  {  // which day a glance answers for
+    fromText("Zeiten: 8:00 8:45 9:30\nMo: A | B | C\nDi: A\nFr: A | B\n", p);
+    Shown s = dayToShow(p, 0, 9 * 60);  // Monday morning
+    assert(s.day == 0 && s.when == When::Today);
+    s = dayToShow(p, 0, 9 * 60 + 30 + LESSON_MIN);  // Monday, school out
+    assert(s.day == 1 && s.when == When::Tomorrow);
+    s = dayToShow(p, 2, 7 * 60);  // Wednesday is empty: no times, switch at 15:00
+    assert(s.day == 2 && s.when == When::Today);
+    s = dayToShow(p, 4, 18 * 60);  // Friday evening: Monday, not tomorrow
+    assert(s.day == 0 && s.when == When::Later);
+    s = dayToShow(p, 6, 10 * 60);  // Sunday: Monday is tomorrow
+    assert(s.day == 0 && s.when == When::Tomorrow);
+    assert(lessonAt(p, 8 * 60 + 50) == 1);
+    assert(lessonAt(p, 7 * 60) == -1);
+  }
+
+  {  // the chooser offers each subject once
+    fromText("Mo: Mathe | Deutsch | Mathe\nDi: Deutsch | Kunst\n", p);
+    const char* subj[8];
+    assert(subjects(p, subj, 8) == 3);
+    assert(strcmp(subj[2], "Kunst") == 0);
+  }
+  printf("timetable ok\n");
+}
+
+static void testKeyboard() {
+  kbd::Keyboard k;
+  auto tapRect = [&](const TRect& r) { return k.tap(r.x + r.w / 2, r.y + r.h / 2); };
+  auto key = [&](int row, int i) {
+    const int x0 = row == 2 ? kbd::ROW3_X : kbd::ROW_X;
+    const int y = row == 0 ? kbd::ROW1_Y : row == 1 ? kbd::ROW2_Y : kbd::ROW3_Y;
+    return k.tap(x0 + i * (kbd::KEY_W + kbd::KEY_GAP) + kbd::KEY_W / 2, y + kbd::KEY_H / 2);
+  };
+  k.begin("TEST", nullptr, 5);
+  key(0, 10);  // Ü, capital because the entry is empty
+  key(1, 0);   // a, lower case after the first letter
+  assert(strcmp(k.text(), "\xc3\x9c" "a") == 0);
+  tapRect(kbd::DEL);
+  assert(strcmp(k.text(), "\xc3\x9c") == 0);
+  tapRect(kbd::DEL);  // DEL takes the whole two-byte letter
+  assert(k.empty());
+  tapRect(kbd::PAGE);  // digits
+  key(0, 1);
+  key(0, 0);
+  key(0, 3);
+  tapRect(kbd::SPACE);
+  key(0, 4);
+  assert(strcmp(k.text(), "214 5") == 0);
+  assert(key(0, 5) == kbd::Keyboard::Key::None);  // full at five
+  assert(tapRect(kbd::OK) == kbd::Keyboard::Key::Ok);
+  // A tap in the gap between two keys types nothing.
+  k.begin("TEST", "x");
+  assert(k.tap(kbd::ROW_X + kbd::KEY_W + 1, kbd::ROW1_Y + 10) == kbd::Keyboard::Key::None);
+  printf("keyboard ok\n");
+}
+
 int main() {
   testNonogram();
   testWordle();
@@ -905,6 +1006,8 @@ int main() {
   testSea();
   testDuel();
   testSudoku();
+  testTimetable();
+  testKeyboard();
   printf("ALL TESTS PASSED\n");
   return 0;
 }

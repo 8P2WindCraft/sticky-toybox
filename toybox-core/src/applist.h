@@ -29,12 +29,18 @@ inline constexpr Group GROUPS[] = {
     // consult and put down -- and recipes, whose "what should we cook" is
     // answered the same way. (STUDY's drawer is full: a fifth tile there
     // would push the recently-read covers off the panel.)
-    {"UTILITY", {{false, 0}, {false, 1}, {false, 3}, {false, 4}, {false, 2}, {false, 11}}, 6},
+    // BOOKS (.tbk comics) moved here to make room for school; it takes the
+    // drawer to a second page.
+    {"UTILITY",
+     {{false, 0}, {false, 1}, {false, 3}, {false, 4}, {false, 2}, {false, 11}, {false, 9}},
+     7},
     // The readers first: the drawer was drawn around "the thing you were
     // reading on top", and the readers are that thing. BOOKS is the .tbk
     // shelf, EPUB the ebook shelf. Four apps on top keeps the bottom of the
     // drawer free for the recently-read covers.
-    {"STUDY", {{false, 9}, {false, 10}, {false, 5}, {false, 6}}, 4},
+    // School first: the timetable, flashcards for vocabulary, notes, and the
+    // ebook reader. Still four, so the recently-read strip keeps its place.
+    {"SCHULE", {{false, 12}, {false, 5}, {false, 6}, {false, 10}}, 4},
 };
 inline constexpr int NGROUPS = (int)(sizeof(GROUPS) / sizeof(GROUPS[0]));
 

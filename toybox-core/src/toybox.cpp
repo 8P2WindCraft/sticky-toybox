@@ -17,6 +17,7 @@
 #include "tools/tool_sea.h"
 #include "tools/tool_sudoku.h"
 #include "tools/tool_timer.h"
+#include "tools/tool_timetable.h"
 #include "wordle.h"
 #include "xo.h"
 
@@ -48,6 +49,7 @@ bool Toybox::build(bool game, int idx) {
       case 8: _active = new SudokuTool(); break;
       case 9: _active = new BookTool(); break;
       case 11: _active = new RecipeTool(); break;
+      case 12: _active = new TimetableTool(); break;
       default: _active = new EpubTool(); break;
     }
   }

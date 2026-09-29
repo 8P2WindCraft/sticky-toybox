@@ -34,6 +34,7 @@
 #include "tools/bookmarks.h"
 #include "tools/reader_menu.h"
 #include "tools/tool_epub.h"
+#include "tools/tool_timetable.h"
 #include "tools/epub/epubcore.h"
 #include "tools/epub/koreader_sdr.h"
 #include "tools/recents.h"
@@ -270,16 +271,39 @@ static void hostLockInfo(lock::Info& i) {
   i.batteryPct = 84;
 }
 
+// Where an app's tile sits in its drawer right now, mirrored from hub.cpp:
+// hidden apps close up, a "+ add" cell follows when any are hidden, and the
+// school drawer pins its block to the top while it wears the recents strip.
+static std::pair<int, int> drawerCell(int folder, bool game, int idx) {
+  const applist::Group& g = applist::GROUPS[folder];
+  int k = -1, cells = 0;
+  for (int i = 0; i < g.n; i++) {
+    if (!appvis::visible(g.items[i].game, g.items[i].idx)) continue;
+    if (g.items[i].game == game && g.items[i].idx == idx) k = cells;
+    cells++;
+  }
+  if (cells < g.n) cells++;
+  recents::Entry tmp[recents::MAX];
+  const bool strip = folder == 2 && recents::list(stickyHost.prefs(), tmp) > 0 && cells <= 4;
+  const int rows = ((cells > 6 ? 6 : cells) + 1) / 2;
+  int y0 = strip ? hubui::FOLDER_TOP
+                 : hubui::FOLDER_TOP +
+                       ((hubui::FOLDER_BOTTOM - hubui::FOLDER_TOP) - rows * hubui::ROW_STEP) / 2;
+  if (y0 < hubui::FOLDER_TOP) y0 = hubui::FOLDER_TOP;
+  if (k < 0) return {-1, -1};
+  return {EPD_W / 4 + (k % 2) * (EPD_W / 2), y0 + (k / 2) * hubui::ROW_STEP + hubui::TILE / 2};
+}
+
 // The hub is now a dock and three folder pages. The walk mirrors hub.cpp's
 // geometry independently -- the applist order, the two-column folder layout,
 // the centred block -- so the two can disagree loudly rather than quietly.
 static void checkHubRouting(const char* label) {
   struct Want { bool game; int idx; };
-  struct Grp { Want items[6]; int n; };
+  struct Grp { Want items[7]; int n; };
   const Grp ALL[3] = {
       {{{true, 0}, {true, 1}, {true, 2}, {true, 3}, {false, 7}, {false, 8}}, 6},
-      {{{false, 0}, {false, 1}, {false, 3}, {false, 4}, {false, 2}, {false, 11}}, 6},
-      {{{false, 9}, {false, 10}, {false, 5}, {false, 6}}, 4},
+      {{{false, 0}, {false, 1}, {false, 3}, {false, 4}, {false, 2}, {false, 11}, {false, 9}}, 7},
+      {{{false, 12}, {false, 5}, {false, 6}, {false, 10}}, 4},
   };
   // The Study drawer wears the recently-read strip once any book has been
   // opened; its tiles are then top-anchored rather than centred.
@@ -353,12 +377,14 @@ static void checkHubRouting(const char* label) {
     // The drawer's grid, mirrored from hub.cpp: two columns, centred block --
     // except Study with recents, whose block pins to the top for the strip.
     const bool strip = gi == 2 && recentsN > 0 && cells <= 4;
-    const int rows = (cells + 1) / 2;
+    // Only the first page of a drawer is walked: six tiles to a page.
+    const int pageCells = cells > 6 ? 6 : cells;
+    const int rows = (pageCells + 1) / 2;
     int y0 = strip ? hubui::FOLDER_TOP
                    : hubui::FOLDER_TOP +
                          ((hubui::FOLDER_BOTTOM - hubui::FOLDER_TOP) - rows * hubui::ROW_STEP) / 2;
     if (y0 < hubui::FOLDER_TOP) y0 = hubui::FOLDER_TOP;
-    for (int ii = 0; ii < G[gi].n; ii++) {
+    for (int ii = 0; ii < G[gi].n && ii < 6; ii++) {
       const int col = ii % 2, row = ii / 2;
       const int cx = EPD_W / 4 + col * (EPD_W / 2);
       const int rowTop = y0 + row * hubui::ROW_STEP;
@@ -370,7 +396,7 @@ static void checkHubRouting(const char* label) {
       routesTo(col == 0 ? EPD_W / 2 - 2 : EPD_W - 2, rowTop + hubui::TILE / 2, w, "right edge",
                gi, ii);
     }
-    if (hasAdd) {
+    if (hasAdd && G[gi].n < 6) {
       // The ghost cell itself: it must open settings, and leaving settings
       // must come back to the hub with the drawer still selected.
       const int col = G[gi].n % 2, row = G[gi].n / 2;
@@ -387,7 +413,7 @@ static void checkHubRouting(const char* label) {
       }
     }
     // An odd count leaves the last right-hand cell empty; nothing may open.
-    if (cells % 2 == 1) {
+    if (pageCells % 2 == 1) {
       toybox.onTap(3 * EPD_W / 4, y0 + (rows - 1) * hubui::ROW_STEP + hubui::TILE / 2);
       if (toybox.hostInApp() || toybox.hostInSettings()) {
         printf("HUB ROUTING FAIL: empty cell in folder %d opened something\n", gi);
@@ -1552,10 +1578,10 @@ int main() {
   tapRect(setui::actionRect(setui::ACT_APPS));
 
   // Hide four apps through the screen itself, so the hub below reflows around
-  // exactly what a finger would have hidden. STUDY's heading sits at
-  // 92 + 26 + 6*52 + 14 = 444 with UTILITY's six rows above it.
+  // exactly what a finger would have hidden. SCHULE's heading sits at
+  // 92 + 26 + 7*52 + 14 = 496 with UTILITY's seven rows above it.
   g_dumpEnabled = false;
-  for (auto rc : {setRow(0, 92, 0), setRow(0, 92, 2), setRow(1, 92, 1), setRow(1, 444, 2)})
+  for (auto rc : {setRow(0, 92, 0), setRow(0, 92, 2), setRow(1, 92, 1), setRow(1, 496, 1)})
     toybox.onTap(rc.first, rc.second);
   toybox.onTap(BACK_W / 2, TOPBAR_H / 2);  // back up to the buttons page
   // Sound steps down a level on each tap and wraps at the bottom, so tapping it
@@ -1564,7 +1590,7 @@ int main() {
   const int levels = stickyHost.soundLevels();
   const int soundWas = stickyHost.soundLevel();
   tapRect(setui::actionRect(setui::ACT_SOUND));
-  if (appvis::shown() != 12 || stickyHost.soundLevel() != soundWas - 1) {
+  if (appvis::shown() != appvis::COUNT - 4 || stickyHost.soundLevel() != soundWas - 1) {
     printf("SETTINGS FAIL: taps did not land (%d shown, sound %d)\n", appvis::shown(),
            stickyHost.soundLevel());
     abort();
@@ -2017,16 +2043,11 @@ int main() {
     g_dumpEnabled = false;
     toybox.goHub();
     toybox.hostHub().goHome();
-    toybox.onTap(80 + 2 * 160, hubui::DOCK_Y + 30);  // STUDY
-    {
-      // BOOKS is the drawer's first cell.
-      const int rows = (4 + 1) / 2;
-      int y0 = hubui::FOLDER_TOP +
-               ((hubui::FOLDER_BOTTOM - hubui::FOLDER_TOP) - rows * hubui::ROW_STEP) / 2;
-      g_dumpEnabled = true;
-      setScreen("tool_books_list");
-      toybox.onTap(EPD_W / 4, y0 + hubui::TILE / 2);
-    }
+    // BOOKS sits on UTILITY's second page now; the routing check covers the
+    // hub, so the reader is opened directly.
+    g_dumpEnabled = true;
+    setScreen("tool_books_list");
+    toybox.open(false, 9);
     BookTool* bt = static_cast<BookTool*>(toybox.hostActive());
     if (!toybox.hostInApp() || toybox.hostIdx() != 9 || bt->hostScreen() != 0) {
       printf("BOOK FAIL: the STUDY drawer's first cell did not open the list\n");
@@ -2903,10 +2924,10 @@ int main() {
     toybox.goHub();
     toybox.hostHub().goHome();
     toybox.onTap(80 + 2 * 160, hubui::DOCK_Y + 30);  // the STUDY drawer
-    // EPUB is the drawer's second cell (row 0, right column). The book test
-    // already put entries in recents, so Study is wearing the strip and its
-    // tiles are top-anchored.
-    toybox.onTap(3 * EPD_W / 4, hubui::FOLDER_TOP + hubui::TILE / 2);
+    {
+      const auto cell = drawerCell(2, false, 10);  // EPUB
+      toybox.onTap(cell.first, cell.second);
+    }
     if (!toybox.hostInApp() || strcmp(toybox.activeTitle(), "EPUB") != 0) {
       printf("EPUB APP FAIL: the STUDY drawer's second cell did not open EPUB\n");
       abort();
@@ -5960,7 +5981,10 @@ int main() {
     toybox.goHub();
     toybox.hostHub().goHome();
     toybox.onTap(80 + 2 * 160, hubui::DOCK_Y + 30);  // the STUDY drawer
-    toybox.onTap(3 * EPD_W / 4, hubui::FOLDER_TOP + hubui::TILE / 2);  // EPUB
+    {
+      const auto cell = drawerCell(2, false, 10);  // EPUB
+      toybox.onTap(cell.first, cell.second);
+    }
     if (!toybox.hostInApp() || strcmp(toybox.activeTitle(), "EPUB") != 0) {
       printf("FONT PAGE FAIL: could not open the reader to check its face\n");
       abort();
@@ -6211,6 +6235,38 @@ int main() {
   g_dumpEnabled = true;
   setScreen("tool_picker");
   toybox.onTap(20 + 220, 676 + 35);  // PICK ONE
+
+  // Stundenplan: the day view (Monday 09:41 on the host clock, so the third
+  // lesson is the running one), the week, the subject chooser, the keyboard.
+  stickyHost.prefs().putString("tt_plan",
+                 "Zeiten: 7:45 8:35 9:40 10:30 11:35 12:25\n"
+                 "Mo: Mathe | Deutsch | Englisch | Englisch | Sport | Sport\n"
+                 "Di: Deutsch | Mathe | Biologie | Geschichte | Kunst | Kunst\n"
+                 "Mi: Religion/Ethik | Englisch | Mathe | Musik | Erdkunde\n"
+                 "Do: Physik | Physik | Deutsch | Mathe | Englisch | Französisch\n"
+                 "Fr: Sport | Deutsch | Mathe | Klassenrat\n");
+  setScreen("tool_timetable_day");
+  toybox.open(false, 12);
+  setScreen("tool_timetable_week");
+  tapRect(ttui::MID);
+  setScreen("tool_timetable_tue");
+  toybox.onTap(ttui::WK_X + ttui::WK_COL + 20, ttui::WK_Y + 20);
+  setScreen("tool_timetable_pick");
+  toybox.onTap(200, ttui::ROWS_Y + 2 * ttui::ROW_H + 20);
+  setScreen("tool_timetable_kbd");
+  tapRect(ttui::NEW_BTN);
+  toybox.onTap(kbd::ROW_X + 10 * (kbd::KEY_W + kbd::KEY_GAP) + 10, kbd::ROW1_Y + 20);  // Ü
+  toybox.onTap(kbd::ROW_X + 4, kbd::ROW2_Y + 20);                                      // a
+  setScreen("tool_timetable_saved");
+  tapRect(kbd::OK);
+  {
+    TimetableTool* tt = static_cast<TimetableTool*>(toybox.hostActive());
+    if (strcmp(tt->hostPlan().cell[1][2], "\xc3\x9c" "a") != 0)
+      printf("TIMETABLE FAIL: typed subject did not land in Tuesday lesson 3\n");
+  }
+  g_dumpEnabled = false;
+  toybox.open(false, 4);  // back to the picker, where the phone shots continue
+  g_dumpEnabled = true;
 
   // The picker can also take its list from a phone.
   setScreen("tool_picker_phone");
