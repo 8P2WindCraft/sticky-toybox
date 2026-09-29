@@ -1,0 +1,8 @@
+.git
+.pio
+prebuilt
+docs
+emu/dist
+test/host/*.pgm
+test/host/preview
+test/host/test_logic

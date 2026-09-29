@@ -43,6 +43,8 @@ bool clockValid();               // false until it has been set at least once
 bool readClock(Clock& out);
 #ifdef TOYBOX_HOST
 void hostSetClock(bool on);
+// The emulator's clock: what readClock answers once set (default 2026-08-10 09:41).
+void hostSetClockTo(const Clock& c);
 #endif
 bool setClock(const Clock& c);   // also marks it valid
 // Convenience for the pairing pages: milliseconds since the Unix epoch,

@@ -13,3 +13,4 @@ __pycache__/
 # that are already committed under docs/firmware. Four megabytes of duplicate
 # blobs; it belongs in the registry's pull request, not in this repo.
 dist/
+emu/dist

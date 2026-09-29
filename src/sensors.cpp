@@ -117,17 +117,25 @@ void hostSetBattery(int pct, bool chg) {
   g_hostCharging = chg;
 }
 bool clockValid() { return g_hostClockSet; }
+static Clock g_hostClock = [] {
+  Clock c{};
+  c.hour = 9;
+  c.minute = 41;  // the hour every product shot keeps
+  c.day = 10;
+  c.month = 8;
+  c.year = 2026;
+  return c;
+}();
 bool readClock(Clock& out) {
   if (!g_hostClockSet) return false;
-  out = Clock{};
-  out.hour = 9;
-  out.minute = 41;   // the hour every product shot keeps
-  out.day = 10;
-  out.month = 8;
-  out.year = 2026;
+  out = g_hostClock;
   return true;
 }
 void hostSetClock(bool on) { g_hostClockSet = on; }
+void hostSetClockTo(const Clock& c) {
+  g_hostClock = c;
+  g_hostClockSet = true;
+}
 bool setClock(const Clock&) { return false; }
 bool setClockFromEpochMs(int64_t) { return false; }
 bool readClimate(int&, int&) { return false; }

@@ -213,7 +213,10 @@ static int g_paintCount = 0;  // counts refreshes even when dumping is off
 // Counted apart, because the whole point of a fast turn is WHICH of these two
 // the reader asked for: a full is 1.7 s on the glass and a partial is 0.3 s.
 static int g_fullCount = 0, g_partialCount = 0;
+// The web emulator's window onto the panel: every refresh, with its kind.
+static void (*g_frameHook)(const uint8_t* fb, bool full) = nullptr;
 void Epd::displayFull() {
+  if (g_frameHook) g_frameHook(_fb, true);
   g_paintCount++;
   g_fullCount++;
   if (g_rotWatch) {  // the first paint after a guard armed it, then done
@@ -223,6 +226,7 @@ void Epd::displayFull() {
   dumpFrame(_fb);
 }
 void Epd::displayPartial() {
+  if (g_frameHook) g_frameHook(_fb, false);
   g_paintCount++;
   g_partialCount++;
   dumpFrame(_fb);

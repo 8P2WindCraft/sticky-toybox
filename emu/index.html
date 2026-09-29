@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sticky Emulator</title>
+<style>
+  :root {
+    --paper: #eceae4;
+    --ink: #161616;
+    --body: #d9d6ce;
+    --rule: #9c998f;
+    --muted: #5c5a55;
+    --bg: #f7f6f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --body: #2b2a28; --rule: #6d6a63; --muted: #aaa69c; --bg: #1c1b1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; min-height: 100vh; }
+  @media (prefers-color-scheme: dark) { body { color: #e8e6e0; } }
+  main { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; align-items: flex-start;
+         padding: 20px 16px 40px; }
+  .device { display: flex; gap: 10px; align-items: center; }
+  .shell { background: var(--body); border-radius: 22px; padding: 18px 16px 26px;
+           box-shadow: 0 1px 0 var(--rule) inset, 0 8px 30px rgba(0,0,0,.12); }
+  canvas { display: block; background: var(--paper); border-radius: 3px; touch-action: none;
+           width: min(480px, calc(100vw - 110px), calc((100vh - 90px) * 0.6)); height: auto;
+           image-rendering: auto; cursor: pointer; }
+  .keys { display: flex; flex-direction: column; gap: 14px; }
+  .keys button { width: 46px; height: 64px; border-radius: 10px; border: 1px solid var(--rule);
+                 background: var(--body); color: inherit; font: 600 13px system-ui, sans-serif;
+                 cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .keys button:active, .keys button.down { background: var(--rule); }
+  .keys .ok { height: 46px; border-radius: 50%; margin-top: 18px; }
+  aside { width: min(340px, 100%); }
+  h1 { font-size: 20px; margin: 4px 0 2px; font-weight: 700; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  section { border-top: 1px solid var(--rule); padding: 14px 0; }
+  label { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 8px 0; }
+  input[type="datetime-local"] { font: inherit; padding: 6px 8px; border: 1px solid var(--rule);
+       border-radius: 6px; background: transparent; color: inherit; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { font: inherit; padding: 8px 12px; border: 1px solid var(--ink); border-radius: 6px;
+         background: transparent; color: inherit; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { .btn { border-color: #e8e6e0; } }
+  .stat { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
+  #status { min-height: 1.4em; }
+</style>
+</head>
+<body>
+<main>
+  <div class="device">
+    <div class="shell"><canvas id="screen" width="480" height="800" aria-label="E-Paper-Display"></canvas></div>
+    <div class="keys" aria-label="Seitentasten">
+      <button id="bUp" title="Hoch (Pfeil hoch). Auf dem Startbildschirm 3 s halten: Einstellungen">▲</button>
+      <button id="bDown" title="Runter (Pfeil runter). Auf dem Startbildschirm halten: weitermachen">▼</button>
+      <button id="bOk" class="ok" title="Power / OK (Enter)">OK</button>
+    </div>
+  </div>
+
+  <aside>
+    <h1>Sticky Emulator</h1>
+    <p class="sub">Die echte Firmware, im Browser. Tippen und Wischen auf dem Display, Tasten rechts.</p>
+
+    <section>
+      <label>E-Ink-Verzögerung
+        <input type="checkbox" id="eink" checked>
+      </label>
+      <p class="hint">Teil-Aktualisierung 0,3 s, volle 1,7 s mit Flackern – wie am Gerät.</p>
+      <p class="stat" id="stats">–</p>
+    </section>
+
+    <section>
+      <label>Uhrzeit am Gerät
+        <input type="datetime-local" id="clock">
+      </label>
+      <div class="row">
+        <button class="btn" id="now">Jetzt</button>
+        <button class="btn" id="mon">Mo 7:30</button>
+        <button class="btn" id="aft">Di 16:00</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="row">
+        <button class="btn" id="reset">Gerät zurücksetzen</button>
+        <button class="btn" id="shot">Screenshot</button>
+      </div>
+      <p class="hint">Einstellungen, Stundenplan und Spielstände bleiben in diesem Browser gespeichert.</p>
+    </section>
+
+    <section>
+      <p class="hint"><kbd>↑</kbd> <kbd>↓</kbd> Seitentasten · <kbd>Enter</kbd> OK ·
+        auf dem Startbildschirm ▲ 3 s halten = Einstellungen, ▼ halten = weitermachen.</p>
+      <p class="hint" id="status"></p>
+    </section>
+  </aside>
+</main>
+
+<script src="emu.js"></script>
+<script>
+(async () => {
+  const KEY = 'sticky-emu-prefs';
+  const status = document.getElementById('status');
+  const load = () => { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } };
+  const store = (v) => { try { localStorage.setItem(KEY, v); } catch {} };
+
+  const M = await StickyEmu();
+  const f = (name, ret, args) => M.cwrap(name, ret, args);
+  const E = {
+    init: f('emu_init', null, ['string']), millis: f('emu_set_millis', null, ['number']),
+    tap: f('emu_tap', null, ['number', 'number']), swipe: f('emu_swipe', null, ['number', 'number']),
+    button: f('emu_button', 'number', ['number']), hold: f('emu_hold', 'number', ['number']),
+    atHome: f('emu_at_home', 'number', []), wantsTick: f('emu_wants_tick', 'number', []),
+    tick: f('emu_tick', null, []), clock: f('emu_set_clock', null, ['number', 'number', 'number', 'number', 'number']),
+    frame: f('emu_frame', 'number', []), pw: f('emu_panel_w', 'number', []), ph: f('emu_panel_h', 'number', []),
+    rb: f('emu_row_bytes', 'number', []), seq: f('emu_seq', 'number', []), lastFull: f('emu_last_full', 'number', []),
+    fulls: f('emu_fulls', 'number', []), partials: f('emu_partials', 'number', []), prefs: f('emu_prefs', 'string', []),
+  };
+
+  // --- the clock -----------------------------------------------------------
+  const clockIn = document.getElementById('clock');
+  const pad = (n) => String(n).padStart(2, '0');
+  const setClock = (d) => {
+    clockIn.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    E.clock(d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes());
+  };
+  const nextWeekday = (wd, h, m) => {  // wd: 1 = Monday
+    const d = new Date(); d.setHours(h, m, 0, 0);
+    d.setDate(d.getDate() + ((wd - d.getDay() + 7) % 7));
+    return d;
+  };
+  clockIn.addEventListener('change', () => { if (clockIn.value) setClock(new Date(clockIn.value)); });
+  document.getElementById('now').onclick = () => setClock(new Date());
+  document.getElementById('mon').onclick = () => setClock(nextWeekday(1, 7, 30));
+  document.getElementById('aft').onclick = () => setClock(nextWeekday(2, 16, 0));
+
+  const t0 = performance.now();
+  E.millis(0);
+  setClock(new Date());
+  E.init(load());
+
+  // --- the panel -----------------------------------------------------------
+  const cv = document.getElementById('screen');
+  const ctx = cv.getContext('2d');
+  const PW = E.pw(), PH = E.ph(), RB = E.rb();
+  const W = 480, H = 800;
+  const INK = [22, 22, 22], PAPER = [236, 234, 228];
+  const eink = document.getElementById('eink');
+
+  // Portrait pixel (x, y) is panel pixel (PW-1-y, x): the panel lies on its side.
+  function snapshot() {
+    const fb = M.HEAPU8.subarray(E.frame(), E.frame() + RB * PH);
+    const out = new ImageData(W, H);
+    const d = out.data;
+    for (let y = 0; y < H; y++) {
+      const px = PW - 1 - y;
+      const byte = px >> 3, mask = 0x80 >> (px & 7);
+      for (let x = 0; x < W; x++) {
+        const c = (fb[x * RB + byte] & mask) ? PAPER : INK;
+        const o = (y * W + x) * 4;
+        d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  let shown = -1, pending = null;
+  function present() {
+    const s = E.seq();
+    if (s === shown) return;
+    shown = s;
+    const frame = snapshot(), full = E.lastFull();
+    document.getElementById('stats').textContent =
+      `${E.partials()} Teil- · ${E.fulls()} volle Aktualisierungen`;
+    clearTimeout(pending);
+    if (!eink.checked) { ctx.putImageData(frame, 0, 0); return; }
+    if (full) {  // a full refresh inverts the panel before it settles
+      ctx.fillStyle = `rgb(${INK})`; ctx.fillRect(0, 0, W, H);
+      pending = setTimeout(() => {
+        ctx.fillStyle = `rgb(${PAPER})`; ctx.fillRect(0, 0, W, H);
+        pending = setTimeout(() => ctx.putImageData(frame, 0, 0), 900);
+      }, 800);
+    } else {
+      pending = setTimeout(() => ctx.putImageData(frame, 0, 0), 300);
+    }
+  }
+
+  let saveTimer = null;
+  const changed = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => store(E.prefs()), 800); };
+
+  // --- touch ---------------------------------------------------------------
+  let down = null;
+  const toPanel = (e) => {
+    const r = cv.getBoundingClientRect();
+    return [Math.round((e.clientX - r.left) * W / r.width), Math.round((e.clientY - r.top) * H / r.height)];
+  };
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); down = toPanel(e); });
+  cv.addEventListener('pointerup', (e) => {
+    if (!down) return;
+    const [x, y] = toPanel(e), dx = x - down[0], dy = y - down[1];
+    if (Math.hypot(dx, dy) > 40) E.swipe(dx, dy); else E.tap(down[0], down[1]);
+    down = null;
+    changed();
+  });
+
+  // --- side buttons: short presses in apps, holds on the home page ----------
+  const HOLD = { 0: 3000, 1: 900 };
+  function sideButton(el, b, key) {
+    let since = 0, timer = null, fired = false;
+    const press = () => {
+      since = performance.now(); fired = false; el.classList.add('down');
+      if (b in HOLD && E.atHome()) timer = setTimeout(() => { fired = !!E.hold(b); changed(); }, HOLD[b]);
+    };
+    const release = () => {
+      if (!since) return;
+      el.classList.remove('down'); clearTimeout(timer);
+      if (!fired && !(b in HOLD && E.atHome())) E.button(b);
+      since = 0; changed();
+    };
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); });
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointerleave', release);
+    window.addEventListener('keydown', (e) => { if (e.key === key && !e.repeat) { e.preventDefault(); press(); } });
+    window.addEventListener('keyup', (e) => { if (e.key === key) release(); });
+  }
+  sideButton(document.getElementById('bUp'), 0, 'ArrowUp');
+  sideButton(document.getElementById('bDown'), 1, 'ArrowDown');
+  sideButton(document.getElementById('bOk'), 2, 'Enter');
+
+  document.getElementById('reset').onclick = () => {
+    if (!confirm('Alle gespeicherten Daten im Emulator löschen?')) return;
+    store(''); location.reload();
+  };
+  document.getElementById('shot').onclick = () => {
+    const a = document.createElement('a');
+    a.download = 'sticky.png'; a.href = cv.toDataURL('image/png'); a.click();
+  };
+
+  // --- the loop ------------------------------------------------------------
+  function loop() {
+    E.millis(performance.now() - t0);
+    if (E.wantsTick()) E.tick();
+    present();
+    requestAnimationFrame(loop);
+  }
+  ctx.putImageData(snapshot(), 0, 0);
+  shown = E.seq();
+  loop();
+  status.textContent = 'Bereit.';
+})().catch((e) => {
+  document.getElementById('status').textContent = 'Emulator konnte nicht starten: ' + e;
+});
+</script>
+</body>
+</html>

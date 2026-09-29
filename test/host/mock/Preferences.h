@@ -68,7 +68,57 @@ class Preferences {
   // firmware checks, and settings deliberately removes keys it may never have
   // written.
   bool remove(const char* k) {
-    const size_t n = ints.erase(k) + uints.erase(k) + bools.erase(k) + strs.erase(k);
+    const size_t n =
+        ints.erase(k) + uints.erase(k) + bools.erase(k) + strs.erase(k) + blobs.erase(k);
     return n > 0;
+  }
+
+  // Everything, as one string and back, for the web emulator to keep in the
+  // browser between visits. One entry a line: type, key, value as hex.
+  std::string serialize() const {
+    std::string out;
+    auto hex = [&](const std::string& v) {
+      static const char* H = "0123456789abcdef";
+      for (unsigned char ch : v) {
+        out += H[ch >> 4];
+        out += H[ch & 15];
+      }
+    };
+    auto line = [&](char t, const std::string& k, const std::string& v) {
+      out += t;
+      out += '\t';
+      out += k;
+      out += '\t';
+      hex(v);
+      out += '\n';
+    };
+    for (auto& e : ints) line('i', e.first, std::to_string(e.second));
+    for (auto& e : uints) line('u', e.first, std::to_string(e.second));
+    for (auto& e : bools) line('b', e.first, e.second ? "1" : "0");
+    for (auto& e : strs) line('s', e.first, e.second);
+    for (auto& e : blobs) line('x', e.first, e.second);
+    return out;
+  }
+  void deserialize(const std::string& in) {
+    size_t p = 0;
+    while (p < in.size()) {
+      const size_t eol = in.find('\n', p);
+      const std::string l = in.substr(p, eol == std::string::npos ? std::string::npos : eol - p);
+      p = eol == std::string::npos ? in.size() : eol + 1;
+      const size_t a = l.find('\t'), b = a == std::string::npos ? a : l.find('\t', a + 1);
+      if (a != 1 || b == std::string::npos) continue;
+      const std::string k = l.substr(2, b - 2), hx = l.substr(b + 1);
+      std::string v;
+      for (size_t i = 0; i + 1 < hx.size(); i += 2)
+        v += (char)std::stoi(hx.substr(i, 2), nullptr, 16);
+      switch (l[0]) {
+        case 'i': ints[k] = (int32_t)std::stol(v); break;
+        case 'u': uints[k] = (uint32_t)std::stoul(v); break;
+        case 'b': bools[k] = v == "1"; break;
+        case 's': strs[k] = v; break;
+        case 'x': blobs[k] = v; break;
+        default: break;
+      }
+    }
   }
 };
