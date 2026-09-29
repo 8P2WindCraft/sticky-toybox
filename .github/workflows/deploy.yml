@@ -1,0 +1,22 @@
+name: Deploy emulator to Coolify
+# Push-to-deploy: every push to schule SSHes to the VPS with a restricted key whose
+# authorized_keys forced-command ONLY triggers this app's Coolify deploy.
+# Set up by scripts/setup_autodeploy.sh (creates the key + the GH secret DEPLOY_SSH_KEY).
+on:
+  push:
+    branches: [schule]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Coolify deploy over SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 31.70.81.61 >> ~/.ssh/known_hosts 2>/dev/null
+          # The command below is IGNORED by the server's forced-command, which runs the
+          # Coolify deploy for this app instead. Output is the deploy queue confirmation.
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new root@31.70.81.61 deploy
