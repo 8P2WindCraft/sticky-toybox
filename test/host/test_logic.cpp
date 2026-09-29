@@ -375,7 +375,7 @@ static void testPickerList() {
   {  // over-long names are cut, not rejected
     const int n = fromText("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", items);  // 30 a's
     assert(n == 1);
-    assert((int)strlen(items[0]) == MAX_LEN);
+    assert((int)strlen(items[0]) == MAX_CHARS);
   }
 
   {  // the tail past MAX_ITEMS is dropped rather than wrapping round
