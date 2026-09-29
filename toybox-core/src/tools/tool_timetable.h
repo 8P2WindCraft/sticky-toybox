@@ -96,9 +96,15 @@ class TimetableTool : public ToolApp {
     return n < ttui::MIN_ROWS ? ttui::MIN_ROWS : n;
   }
 
+  // Into or out of the keyboard is a full clean: forty-odd keys replace (or
+  // are replaced by) a list, and a partial leaves their outlines behind.
   void show(Screen s) {
+    const bool fromKeys = _screen == Screen::Typing || s == Screen::Typing;
     _screen = s;
-    host().refreshUi();
+    if (fromKeys)
+      host().refresh(true);
+    else
+      host().refreshUi();
   }
 
   void step(int by) {
@@ -217,7 +223,7 @@ class TimetableTool : public ToolApp {
     const char* cur = _plan.cell[_day][_lesson];
     for (int i = 0; i < n; i++) {
       const TRect r = subjRect(i);
-      c.button(r.x, r.y, r.w, r.h, subj[i], strcmp(subj[i], cur) == 0, TS_MED);
+      c.option(r.x, r.y, r.w, r.h, subj[i], strcmp(subj[i], cur) == 0, TS_MED);
     }
     if (n == 0)
       c.textCentered(c.width() / 2, 300, "Noch keine F\xc3\xa4" "cher", TS_MED, true);
@@ -252,6 +258,8 @@ class TimetableTool : public ToolApp {
   void tapTyping(int x, int y) {
     switch (_kbd.tap(x, y)) {
       case kbd::Keyboard::Key::Typed:
+        // One key, one partial: typing must feel immediate, and the full
+        // clean on the way out takes care of what the partials leave.
         host().beep(0);
         host().refresh(false);
         return;

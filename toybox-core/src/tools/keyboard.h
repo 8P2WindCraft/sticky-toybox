@@ -85,7 +85,7 @@ class Keyboard {
         const TRect k = keyRect(r, i);
         c.button(k.x, k.y, k.w, k.h, rows[r][i], false, TS_MED);
       }
-    if (!_sym) c.button(SHIFT.x, SHIFT.y, SHIFT.w, SHIFT.h, "Aa", _shift, TS_MED);
+    if (!_sym) c.option(SHIFT.x, SHIFT.y, SHIFT.w, SHIFT.h, "Aa", _shift, TS_MED);
     c.button(DEL.x, DEL.y, DEL.w, DEL.h, "DEL", false, TS_SMALL);
     c.button(PAGE.x, PAGE.y, PAGE.w, PAGE.h, _sym ? "ABC" : "123", false, TS_MED);
     c.button(SPACE.x, SPACE.y, SPACE.w, SPACE.h, "Leertaste", false, TS_MED);

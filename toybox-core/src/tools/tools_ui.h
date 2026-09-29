@@ -112,6 +112,15 @@ class ToolsCanvas {
       textInBox(x, y, w, h, label, sz, true, false);
     }
   }
+  // One of several choices, with the chosen one marked by a heavy frame and a
+  // bold label rather than a fill: picking something is a partial refresh, and
+  // a black slab moving from button to button flashes and ghosts where a
+  // frame does not.
+  void option(int x, int y, int w, int h, const char* label, bool chosen, TSize sz = TS_MED) {
+    fillRect(x, y, w, h, false);
+    drawRect(x, y, w, h, chosen ? 3 : 1, true);
+    textInBox(x, y, w, h, label, sz, true, chosen);
+  }
   // A row in a list of choices: the label, left-aligned, and a hairline under
   // it. No box. This is the hub's language -- dividers between things rather
   // than frames around them -- and it is what a stack of seven of these should
