@@ -28,6 +28,7 @@ class QuestTool : public ToolApp {
   ~QuestTool() override { save(); }
 
   const char* title() const override { return "ABENTEUER"; }
+  bool cleanTransitions() const override { return true; }
 
   void enter(ToolsHost& h) override {
     ToolApp::enter(h);

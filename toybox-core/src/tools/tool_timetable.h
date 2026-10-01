@@ -37,6 +37,7 @@ inline TRect subjRect(int i) {
 class TimetableTool : public ToolApp {
  public:
   const char* title() const override { return "STUNDENPLAN"; }
+  bool cleanTransitions() const override { return true; }
 
   void enter(ToolsHost& h) override {
     ToolApp::enter(h);
@@ -186,9 +187,14 @@ class TimetableTool : public ToolApp {
       char num[4];
       snprintf(num, sizeof(num), "%d", i + 1);
       c.textInBox(0, y, WK_X, WK_ROW, num, TS_SMALL, true);
-      for (int d = 0; d < ttdata::DAYS; d++)
-        c.textClipped(WK_X + d * WK_COL + 5, y + (WK_ROW - c.textHeight(TS_SMALL)) / 2, WK_COL - 8,
-                      _plan.cell[d][i], TS_SMALL, true);
+      for (int d = 0; d < ttdata::DAYS; d++) {
+        // As large as the cell allows: the week is read from across the
+        // kitchen, so a subject that fits at TS_MED gets TS_MED.
+        const char* s = _plan.cell[d][i];
+        const TSize sz = c.textWidth(s, TS_MED) <= WK_COL - 8 ? TS_MED : TS_SMALL;
+        c.textClipped(WK_X + d * WK_COL + 5, y + (WK_ROW - c.textHeight(sz)) / 2, WK_COL - 8, s,
+                      sz, true);
+      }
       c.fillRect(WK_X, y + WK_ROW - 1, ttdata::DAYS * WK_COL, 1, true);
     }
     c.button(MID.x, MID.y, MID.w, MID.h, "TAG", false, TS_LARGE);

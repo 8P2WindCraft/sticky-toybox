@@ -73,6 +73,12 @@
         <input type="checkbox" id="eink" checked>
       </label>
       <p class="hint">Teil-Aktualisierung 0,3 s, volle 1,7 s mit Flackern – wie am Gerät.</p>
+      <label>Ghosting zeigen
+        <input type="checkbox" id="ghost" checked>
+      </label>
+      <p class="hint">Jede Teil-Aktualisierung lässt einen Schatten dessen stehen, was schwarz war;
+        erst eine volle löscht ihn. Bleibt nach ein paar Tipps ein grauer Rest, ist der Bildschirm
+        nicht E-Ink-freundlich.</p>
       <p class="stat" id="stats">–</p>
     </section>
 
@@ -153,20 +159,43 @@
   const W = 480, H = 800;
   const INK = [22, 22, 22], PAPER = [236, 234, 228];
   const eink = document.getElementById('eink');
+  const ghostOn = document.getElementById('ghost');
 
   // Portrait pixel (x, y) is panel pixel (PW-1-y, x): the panel lies on its side.
-  function snapshot() {
+  function inkMask() {
     const fb = M.HEAPU8.subarray(E.frame(), E.frame() + RB * PH);
-    const out = new ImageData(W, H);
-    const d = out.data;
+    const ink = new Uint8Array(W * H);
     for (let y = 0; y < H; y++) {
       const px = PW - 1 - y;
       const byte = px >> 3, mask = 0x80 >> (px & 7);
-      for (let x = 0; x < W; x++) {
-        const c = (fb[x * RB + byte] & mask) ? PAPER : INK;
-        const o = (y * W + x) * 4;
-        d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255;
+      for (let x = 0; x < W; x++) ink[y * W + x] = (fb[x * RB + byte] & mask) ? 0 : 1;
+    }
+    return ink;
+  }
+
+  // Ghosting, roughly as the panel does it: a pixel driven from black to white
+  // by a partial refresh keeps a faint shadow, and shadows add up until a full
+  // refresh shakes every pixel clean.
+  let prevInk = new Uint8Array(W * H);
+  const ghost = new Float32Array(W * H);
+  let sinceFull = 0;
+  function compose(ink, full) {
+    if (full) { ghost.fill(0); sinceFull = 0; }
+    else {
+      sinceFull++;
+      for (let i = 0; i < ink.length; i++)
+        if (prevInk[i] && !ink[i]) ghost[i] = Math.min(1, ghost[i] + 0.25);
+    }
+    prevInk = ink;
+    const out = new ImageData(W, H), d = out.data, g = ghostOn.checked;
+    for (let i = 0; i < ink.length; i++) {
+      const o = i * 4;
+      if (ink[i]) { d[o] = INK[0]; d[o + 1] = INK[1]; d[o + 2] = INK[2]; }
+      else {
+        const k = g ? ghost[i] * 70 : 0;
+        d[o] = PAPER[0] - k; d[o + 1] = PAPER[1] - k; d[o + 2] = PAPER[2] - k;
       }
+      d[o + 3] = 255;
     }
     return out;
   }
@@ -176,9 +205,10 @@
     const s = E.seq();
     if (s === shown) return;
     shown = s;
-    const frame = snapshot(), full = E.lastFull();
+    const full = E.lastFull();
+    const frame = compose(inkMask(), full);
     document.getElementById('stats').textContent =
-      `${E.partials()} Teil- · ${E.fulls()} volle Aktualisierungen`;
+      `${E.partials()} Teil- · ${E.fulls()} volle Aktualisierungen · ${sinceFull} Teil seit der letzten vollen`;
     clearTimeout(pending);
     if (!eink.checked) { ctx.putImageData(frame, 0, 0); return; }
     if (full) {  // a full refresh inverts the panel before it settles
@@ -250,7 +280,7 @@
     present();
     requestAnimationFrame(loop);
   }
-  ctx.putImageData(snapshot(), 0, 0);
+  ctx.putImageData(compose(inkMask(), true), 0, 0);
   shown = E.seq();
   loop();
   status.textContent = 'Bereit.';

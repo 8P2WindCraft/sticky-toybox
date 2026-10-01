@@ -129,7 +129,8 @@ void Toybox::open(bool game, int idx, bool paint) {
   // replace it with the book's loading face -- a screen nobody asked for at
   // 1.7 s a showing. The caller then owns the first paint on BOTH paths,
   // opened and not-found alike.
-  if (paint) _host->refresh(_active->enterTouchesCard() || wallimg::have());
+  if (paint)
+    _host->refresh(_active->enterTouchesCard() || _active->cleanTransitions() || wallimg::have());
 }
 
 void Toybox::openSettings() {
@@ -194,12 +195,14 @@ void Toybox::openPairPicture() {
 }
 
 void Toybox::goHub() {
+  // Asked before the app goes: one that came in clean leaves clean.
+  const bool clean = _active && _active->cleanTransitions();
   release();
   _settings.leave();
   _where = Where::Hub;
   // Same rule as the drawer: partial onto a plain home, full when the photo
   // wallpaper is about to be under the ink.
-  _host->refresh(wallimg::have());
+  _host->refresh(clean || wallimg::have());
 }
 
 void Toybox::render(ToolsCanvas& c) {

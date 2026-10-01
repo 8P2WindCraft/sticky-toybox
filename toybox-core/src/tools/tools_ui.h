@@ -788,6 +788,12 @@ class ToolApp {
   // yes (their shelves list the card); everything else enters from flash and
   // RAM and gets the cheap paint.
   virtual bool enterTouchesCard() const { return false; }
+  // Does the app want a full refresh on the way in and on the way out? The
+  // stock apps enter on a partial: a few hairlines replacing the home
+  // screen. An app whose screen is dense (the timetable grid, a game room)
+  // replaces nearly every pixel, and a partial would leave the home screen
+  // standing behind it as a shadow (docs/SCHULE.md).
+  virtual bool cleanTransitions() const { return false; }
   virtual void render(ToolsCanvas& c) = 0;
   virtual void onTap(int x, int y) = 0;
   virtual void onSwipe(int dx, int dy) { (void)dx; (void)dy; }
